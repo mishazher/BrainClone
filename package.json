@@ -4,10 +4,9 @@
   "private": true,
   "description": "BrainClone - AI-powered knowledge graph for bringing your memories to life",
   "scripts": {
-    "dev": "npm run dev",
-    "build": "npm run build",
-    "start": "npm run start",
-    "install": "npm install"
+    "dev": "npm run dev -w frontend",
+    "build": "npm run build -w frontend",
+    "start": "npm run start -w frontend"
   },
   "workspaces": [
     "frontend"
