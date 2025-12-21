@@ -265,7 +265,8 @@ class Neo4jService:
             rel_filter = ""
             if request.relationship_types:
                 rel_types = [r.value.upper() for r in request.relationship_types]
-                rel_filter = f":{"|".join(rel_types)}"
+                joined_types = "|".join(rel_types)
+                rel_filter = f":{joined_types}"
 
             direction = "*" if request.bidirectional else ">"
 
