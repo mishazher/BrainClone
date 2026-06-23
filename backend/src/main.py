@@ -7,10 +7,10 @@ import uvicorn
 
 from .config import settings
 from .database import PostgresDB, Neo4jDB
-from .services import Neo4jService, VectorService, R2RService
+from .services import Neo4jService, VectorService  # R2RService disabled (r2r removed)
 from .services.mock_data import MockDataService
 
-from .api.routes import documents, graph, search
+from .api.routes import graph, search  # documents router disabled (r2r removed)
 
 structlog.configure(
     processors=[
@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI):
         app.state.mock_data_service = mock_data_service
         app.state.neo4j_service = None
         app.state.vector_service = None
-        app.state.r2r_service = None
+        app.state.r2r_service = None  # r2r disabled; kept as None for shutdown guards
         logger.info("BrainClone demo mode initialized with sample memories")
 
     except Exception as e:
@@ -61,8 +61,9 @@ async def lifespan(app: FastAPI):
         await postgres_db.disconnect()
         if neo4j_db.driver:
             await neo4j_db.disconnect()
-        if hasattr(app.state, 'r2r_service') and app.state.r2r_service:
-            await app.state.r2r_service.cleanup()
+        # r2r disabled: no r2r_service to clean up
+        # if hasattr(app.state, 'r2r_service') and app.state.r2r_service:
+        #     await app.state.r2r_service.cleanup()
         if hasattr(app.state, 'neo4j_service') and app.state.neo4j_service:
             await app.state.neo4j_service.disconnect()
         if hasattr(app.state, 'vector_service') and app.state.vector_service:
@@ -80,7 +81,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -135,11 +136,12 @@ async def root():
     }
 
 
-app.include_router(
-    documents.router,
-    prefix=f"{settings.api_v1_prefix}",
-    tags=["documents"]
-)
+# documents router disabled (r2r removed for lean deploy):
+# app.include_router(
+#     documents.router,
+#     prefix=f"{settings.api_v1_prefix}",
+#     tags=["documents"]
+# )
 
 app.include_router(
     graph.router,

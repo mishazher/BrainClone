@@ -1,10 +1,18 @@
 # Search and retrieval API routes.
+#
+# NOTE: r2r (document-RAG) is disabled for the lean deploy. The two fully
+# r2r-based endpoints (/documents, /rag) are commented out below, and the r2r
+# branches inside the hybrid/semantic/contextual endpoints are disabled. The
+# graph- and vector-only logic remains active. To re-enable, restore the
+# R2RService import, the get_r2r_service dependency, and the commented blocks.
 
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional, Dict, Any, List
 import structlog
 
-from ...services import R2RService, Neo4jService, VectorService
+# r2r disabled for lean deploy:
+# from ...services import R2RService
+from ...services import Neo4jService, VectorService
 from ...models.entities import EntitySearchRequest
 
 logger = structlog.get_logger(__name__)
@@ -12,9 +20,10 @@ logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/search", tags=["search"])
 
 
-async def get_r2r_service():
-    async with R2RService() as service:
-        yield service
+# r2r disabled for lean deploy:
+# async def get_r2r_service():
+#     async with R2RService() as service:
+#         yield service
 
 
 async def get_neo4j_service():
@@ -27,79 +36,60 @@ async def get_vector_service():
         yield service
 
 
-@router.post("/documents")
-async def search_documents(
-    query: str,
-    search_type: str = "hybrid",
-    limit: int = 10,
-    filters: Optional[Dict[str, Any]] = None,
-    r2r_service: R2RService = Depends(get_r2r_service)
-):
-    """
-    Search for documents using R2R.
-
-    Args:
-        query: Search query
-        search_type: Type of search (vector, keyword, hybrid)
-        limit: Maximum results
-        filters: Optional filters
-
-    Returns:
-        Search results from documents
-    """
-    try:
-        results = await r2r_service.search(
-            query=query,
-            search_type=search_type,
-            limit=limit,
-            filters=filters
-        )
-
-        return {
-            "query": query,
-            "search_type": search_type,
-            "count": len(results),
-            "results": results
-        }
-
-    except Exception as e:
-        logger.error("Document search failed", error=str(e), query=query)
-        raise HTTPException(status_code=500, detail=str(e))
+# r2r disabled for lean deploy: document search is a pure-r2r endpoint.
+# @router.post("/documents")
+# async def search_documents(
+#     query: str,
+#     search_type: str = "hybrid",
+#     limit: int = 10,
+#     filters: Optional[Dict[str, Any]] = None,
+#     r2r_service: R2RService = Depends(get_r2r_service)
+# ):
+#     """
+#     Search for documents using R2R.
+#     """
+#     try:
+#         results = await r2r_service.search(
+#             query=query,
+#             search_type=search_type,
+#             limit=limit,
+#             filters=filters
+#         )
+#         return {
+#             "query": query,
+#             "search_type": search_type,
+#             "count": len(results),
+#             "results": results
+#         }
+#     except Exception as e:
+#         logger.error("Document search failed", error=str(e), query=query)
+#         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/rag")
-async def rag_search(
-    messages: List[Dict[str, str]],
-    search_query: Optional[str] = None,
-    use_knowledge_graph: bool = True,
-    r2r_service: R2RService = Depends(get_r2r_service)
-):
-    """
-    Perform RAG search with context.
-
-    Args:
-        messages: Chat messages
-        search_query: Optional search query
-        use_knowledge_graph: Whether to use knowledge graph
-
-    Returns:
-        RAG completion with context
-    """
-    try:
-        result = await r2r_service.rag_completion(
-            messages=messages,
-            search_query=search_query,
-            use_knowledge_graph=use_knowledge_graph
-        )
-
-        return {
-            "status": "success",
-            "response": result
-        }
-
-    except Exception as e:
-        logger.error("RAG search failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+# r2r disabled for lean deploy: RAG completion is a pure-r2r endpoint.
+# @router.post("/rag")
+# async def rag_search(
+#     messages: List[Dict[str, str]],
+#     search_query: Optional[str] = None,
+#     use_knowledge_graph: bool = True,
+#     r2r_service: R2RService = Depends(get_r2r_service)
+# ):
+#     """
+#     Perform RAG search with context.
+#     """
+#     try:
+#         result = await r2r_service.rag_completion(
+#             messages=messages,
+#             search_query=search_query,
+#             use_knowledge_graph=use_knowledge_graph
+#         )
+#         return {
+#             "status": "success",
+#             "response": result
+#         }
+#     except Exception as e:
+#         logger.error("RAG search failed", error=str(e))
+#         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/hybrid")
@@ -109,17 +99,21 @@ async def hybrid_search(
     include_graph: bool = True,
     include_documents: bool = True,
     entity_types: Optional[List[str]] = None,
-    r2r_service: R2RService = Depends(get_r2r_service),
+    # r2r disabled for lean deploy:
+    # r2r_service: R2RService = Depends(get_r2r_service),
     neo4j_service: Neo4jService = Depends(get_neo4j_service)
 ):
     """
     Hybrid search across documents and graph.
 
+    NOTE: document (r2r) results are disabled for the lean deploy; only graph
+    results are returned regardless of `include_documents`.
+
     Args:
         query: Search query
         limit: Maximum results per source
         include_graph: Include graph search
-        include_documents: Include document search
+        include_documents: Include document search (disabled; r2r removed)
         entity_types: Filter entity types
 
     Returns:
@@ -131,19 +125,18 @@ async def hybrid_search(
             "sources": []
         }
 
-
-        if include_documents:
-            doc_results = await r2r_service.search(
-                query=query,
-                search_type="hybrid",
-                limit=limit
-            )
-            results["sources"].append({
-                "type": "documents",
-                "count": len(doc_results),
-                "results": doc_results
-            })
-
+        # r2r disabled for lean deploy: document search source removed.
+        # if include_documents:
+        #     doc_results = await r2r_service.search(
+        #         query=query,
+        #         search_type="hybrid",
+        #         limit=limit
+        #     )
+        #     results["sources"].append({
+        #         "type": "documents",
+        #         "count": len(doc_results),
+        #         "results": doc_results
+        #     })
 
         if include_graph:
             from ...models.entities import EntityFilter
@@ -186,18 +179,22 @@ async def semantic_search(
     threshold: float = 0.7,
     include_documents: bool = True,
     vector_service: VectorService = Depends(get_vector_service),
-    r2r_service: R2RService = Depends(get_r2r_service),
+    # r2r disabled for lean deploy:
+    # r2r_service: R2RService = Depends(get_r2r_service),
     neo4j_service: Neo4jService = Depends(get_neo4j_service)
 ):
     """
     Perform semantic search using embeddings.
+
+    NOTE: document (r2r) results are disabled for the lean deploy; only entity
+    (vector + graph) results are returned regardless of `include_documents`.
 
     Args:
         query_embedding: Query embedding vector
         limit: Maximum results
         entity_types: Filter by entity types
         threshold: Similarity threshold
-        include_documents: Include document search
+        include_documents: Include document search (disabled; r2r removed)
 
     Returns:
         Semantically similar results
@@ -231,18 +228,18 @@ async def semantic_search(
             "results": enriched_entities
         })
 
-        if include_documents:
-            doc_results = await r2r_service.search(
-                query="", 
-                search_type="vector",
-                limit=limit
-            )
-
-            results["sources"].append({
-                "type": "documents",
-                "count": len(doc_results),
-                "results": doc_results
-            })
+        # r2r disabled for lean deploy: document search source removed.
+        # if include_documents:
+        #     doc_results = await r2r_service.search(
+        #         query="",
+        #         search_type="vector",
+        #         limit=limit
+        #     )
+        #     results["sources"].append({
+        #         "type": "documents",
+        #         "count": len(doc_results),
+        #         "results": doc_results
+        #     })
 
         results["total_count"] = sum(s["count"] for s in results["sources"])
 
@@ -260,10 +257,14 @@ async def contextual_search(
     max_depth: int = 2,
     limit: int = 20,
     neo4j_service: Neo4jService = Depends(get_neo4j_service),
-    r2r_service: R2RService = Depends(get_r2r_service)
+    # r2r disabled for lean deploy:
+    # r2r_service: R2RService = Depends(get_r2r_service)
 ):
     """
     Search with graph context from specific entities.
+
+    NOTE: document (r2r) results are disabled for the lean deploy; this endpoint
+    now returns only the graph context gathered from the seed entities.
 
     Args:
         query: Search query
@@ -288,24 +289,23 @@ async def contextual_search(
             traversal_result = await neo4j_service.traverse_graph(traversal)
             related_entities.extend(traversal_result["nodes"])
 
-        entity_names = list(set(
-            e.get("name", "") for e in related_entities
-            if e.get("name")
-        ))
-
-        contextual_query = f"{query} {' '.join(entity_names[:10])}"
-
-        doc_results = await r2r_service.search(
-            query=contextual_query,
-            search_type="hybrid",
-            limit=limit
-        )
+        # r2r disabled for lean deploy: document retrieval removed.
+        # entity_names = list(set(
+        #     e.get("name", "") for e in related_entities
+        #     if e.get("name")
+        # ))
+        # contextual_query = f"{query} {' '.join(entity_names[:10])}"
+        # doc_results = await r2r_service.search(
+        #     query=contextual_query,
+        #     search_type="hybrid",
+        #     limit=limit
+        # )
 
         return {
             "query": query,
             "context_entities": len(context_entity_ids),
             "related_entities": len(related_entities),
-            "document_results": doc_results,
+            "document_results": [],  # r2r disabled
             "graph_context": related_entities[:10]
         }
 

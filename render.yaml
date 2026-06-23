@@ -1,65 +1,41 @@
+# Render Blueprint for the BrainClone backend (FastAPI + Neo4j, lean deploy).
+#
+# Deploy:
+#   1. Push this repo to GitHub.
+#   2. Render Dashboard -> New -> Blueprint -> pick this repo (uses this file).
+#   3. Fill in the NEO4J_* env vars (marked sync:false) in the dashboard.
+#
+# Uses the native Python runtime (not backend/Dockerfile, which relies on a
+# git-ignored uv.lock). rootDir scopes the service to /backend. r2r/Postgres are
+# intentionally omitted — the app runs Neo4j-only.
 services:
-  # Backend API
   - type: web
-    name: graphaura-api
-    runtime: docker
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
+    name: brainclone-backend
+    runtime: python
+    rootDir: backend
+    plan: free
+    region: oregon
+    branch: main
+    autoDeploy: true
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn src.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
     envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: graphaura-db
-          property: connectionString
+      - key: PYTHON_VERSION
+        value: "3.13.1"
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_FORMAT
+        value: json
+      # CORS for the Vercel frontend (JSON list; pydantic parses it).
+      - key: CORS_ORIGINS
+        value: '["https://brainclone.work","http://localhost:3000"]'
+      # Neo4j connection — set these in the Render dashboard (kept out of git).
       - key: NEO4J_URI
         sync: false
       - key: NEO4J_USER
-        value: neo4j
+        sync: false
       - key: NEO4J_PASSWORD
         sync: false
-      - key: ANTHROPIC_API_KEY
+      - key: NEO4J_DATABASE
         sync: false
-      - key: JWT_SECRET_KEY
-        generateValue: true
-      - key: CORS_ORIGINS
-        value: https://graphaura-frontend.vercel.app
-      - key: R2R_BASE_URL
-        fromService:
-          name: graphaura-r2r
-          type: web
-          property: hostport
-    healthCheckPath: /health
-    autoDeploy: true
-
-  # R2R Service
-  - type: web
-    name: graphaura-r2r
-    runtime: docker
-    dockerCommand: docker run -p 7272:7272 ragtoriches/r2r:latest
-    envVars:
-      - key: POSTGRES_HOST
-        fromDatabase:
-          name: graphaura-db
-          property: host
-      - key: POSTGRES_USER
-        fromDatabase:
-          name: graphaura-db
-          property: user
-      - key: POSTGRES_PASSWORD
-        fromDatabase:
-          name: graphaura-db
-          property: password
-      - key: POSTGRES_DBNAME
-        value: r2r
-      - key: ANTHROPIC_API_KEY
-        sync: false
-    healthCheckPath: /health
-    autoDeploy: false
-
-databases:
-  # PostgreSQL with pgvector
-  - name: graphaura-db
-    databaseName: graphaura
-    user: graphaura
-    postgresMajorVersion: 16
-    plan: starter
-    ipAllowList: []

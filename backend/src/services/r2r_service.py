@@ -1,4 +1,10 @@
-"""R2R service for document processing and RAG operations."""
+"""R2R service for document processing and RAG operations.
+
+DISABLED: r2r (document-RAG) is not part of the lean deploy. This module is no
+longer imported anywhere (see services/__init__.py) and `r2r`/`tenacity` are no
+longer installed. To re-enable, restore the imports below, reinstate the
+dependencies in requirements.txt, and re-add the routers in main.py.
+"""
 
 import os
 import tempfile
@@ -9,13 +15,14 @@ from typing import Any
 import httpx
 import structlog
 from fastapi import UploadFile
-from r2r import R2RClient
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-)
+# r2r disabled for lean deploy:
+# from r2r import R2RClient
+# from tenacity import (
+#     retry,
+#     retry_if_exception_type,
+#     stop_after_attempt,
+#     wait_exponential,
+# )
 
 from ..config import settings
 

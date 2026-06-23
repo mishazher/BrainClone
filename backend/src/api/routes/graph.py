@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional, Dict, Any, List
+from neo4j.graph import Node, Relationship as Neo4jRelationship
 import structlog
 
 from ...services import Neo4jService, VectorService
@@ -428,6 +429,29 @@ async def get_graph_visualization(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _serialize_neo4j_value(value: Any) -> Any:
+    """Serialize Neo4j graph objects (nodes/relationships) into plain JSON.
+
+    Nodes are returned as their property map, with a ``category`` field derived
+    from the entity ``type`` so the frontend can colour/classify them. The raw
+    relationship type is exposed under the ``type`` key.
+    """
+    if isinstance(value, Node):
+        props = dict(value)
+        if "category" not in props and props.get("type"):
+            props["category"] = str(props["type"]).capitalize()
+        return props
+    if isinstance(value, Neo4jRelationship):
+        rel = dict(value)
+        rel["type"] = value.type
+        return rel
+    if isinstance(value, (list, tuple)):
+        return [_serialize_neo4j_value(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _serialize_neo4j_value(v) for k, v in value.items()}
+    return value
+
+
 @router.post("/cypher")
 async def execute_cypher_query(
     query: str,
@@ -435,85 +459,29 @@ async def execute_cypher_query(
     neo4j_service: Neo4jService = Depends(get_neo4j_service)
 ):
     """
-    Execute a raw Cypher query - returns mock data for demo.
+    Execute a raw Cypher query against the live Neo4j database.
 
     Args:
         query: Cypher query
         parameters: Query parameters
 
     Returns:
-        Query results with sample memory data
+        Query results serialized as plain JSON records
     """
     try:
-        # For demo mode, return mock data that matches the expected format
-        from fastapi import Request
-        
-        # Get the app state to access mock data service
-        # This is a workaround since we can't easily inject the mock service
-        from ...main import app
-        
-        if hasattr(app.state, 'mock_data_service'):
-            mock_service = app.state.mock_data_service
-            
-            # Convert mock data to the format expected by the frontend
-            memories = mock_service.get_all_memories()
-            relationships = mock_service.get_all_relationships()
-            
-            # Format as Neo4j results
-            results = []
-            for memory in memories:
-                # Create a result that matches the frontend's expected format
-                result = {
-                    "n": {
-                        "name": memory["name"],
-                        "category": memory["category"],
-                        "description": memory["description"],
-                        "type": memory["type"]
-                    },
-                    "r": None,  # Will be filled by relationships
-                    "m": None
-                }
-                results.append(result)
-            
-            # Add relationship data
-            for rel in relationships:
-                # Find source and target memories
-                source_mem = next((m for m in memories if m["id"] == rel["source"]), None)
-                target_mem = next((m for m in memories if m["id"] == rel["target"]), None)
-                
-                if source_mem and target_mem:
-                    result = {
-                        "n": {
-                            "name": source_mem["name"],
-                            "category": source_mem["category"],
-                            "description": source_mem["description"],
-                            "type": source_mem["type"]
-                        },
-                        "r": {
-                            "type": rel["type"]
-                        },
-                        "m": {
-                            "name": target_mem["name"],
-                            "category": target_mem["category"],
-                            "description": target_mem["description"],
-                            "type": target_mem["type"]
-                        }
-                    }
-                    results.append(result)
-            
-            return {
-                "status": "success",
-                "count": len(results),
-                "results": results
-            }
-        else:
-            # Fallback to empty results
-            return {
-                "status": "success",
-                "count": 0,
-                "results": []
-            }
+        raw_results = await neo4j_service.execute_cypher(query, parameters)
+
+        results = [
+            {key: _serialize_neo4j_value(value) for key, value in record.items()}
+            for record in raw_results
+        ]
+
+        return {
+            "status": "success",
+            "count": len(results),
+            "results": results
+        }
 
     except Exception as e:
-        logger.error("Mock data query execution failed", error=str(e))
+        logger.error("Cypher query execution failed", error=str(e), query=query)
         raise HTTPException(status_code=500, detail=str(e))

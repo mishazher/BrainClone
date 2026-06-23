@@ -1,9 +1,13 @@
+# DISABLED: this router is entirely r2r-based (document upload + RAG) and is no
+# longer registered in main.py for the lean deploy. Re-add the import below, the
+# main.py include_router call, and the r2r dependency to re-enable.
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Form
 from typing import Optional, Dict, Any, List
 import structlog
 import json
 
-from ...services import R2RService
+# r2r disabled for lean deploy:
+# from ...services import R2RService
 
 logger = structlog.get_logger(__name__)
 

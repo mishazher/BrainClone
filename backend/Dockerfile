@@ -1,28 +1,21 @@
+# Lean image for the BrainClone backend (FastAPI + Neo4j).
+# Works on Cloud Run, Render, Fly, etc. Cloud Run injects $PORT (default 8080).
 FROM python:3.13-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    postgresql-client \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PORT=8080
 
-# Install uv
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.local/bin:$PATH"
+# Install Python dependencies first for better layer caching.
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy dependency files
-COPY pyproject.toml uv.lock README.md ./
-
-# Install dependencies
-RUN /root/.local/bin/uv sync --frozen
-
-# Copy application code
+# Application code.
 COPY src ./src
 
-# Expose port
-EXPOSE 8000
+EXPOSE 8080
 
-# Run the application
-CMD ["/root/.local/bin/uv", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Bind to $PORT so the same image runs on Cloud Run / Render / Fly / local.
+CMD ["sh", "-c", "uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8080}"]

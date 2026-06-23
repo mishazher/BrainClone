@@ -1,0 +1,23 @@
+# Keep secrets and local cruft out of the Cloud Run build upload.
+.env
+.env.*
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local-only / one-off scripts not needed in the image.
+check_db_count.py
+test_write_neo4j.py
+seed_neo4j.py
+populate_extended_neo4j.py
+
+# Other platforms' deploy configs (this app deploys via the Dockerfile).
+vercel.json
+fly.toml
+railway.json
+Procfile

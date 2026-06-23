@@ -19,7 +19,16 @@ class Settings(BaseSettings):
     environment: str = Field(default="development", description="Environment (development, staging, production)")
 
     api_v1_prefix: str = "/api/v1"
-    cors_origins: list[str] = Field(default=["*"], description="CORS allowed origins")
+    cors_origins: str = Field(
+        default="http://localhost:3000",
+        description="Comma-separated list of allowed CORS origins, e.g. 'https://app.vercel.app,http://localhost:3000'. Set via CORS_ORIGINS in .env.",
+    )
+
+    @computed_field
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Parse the comma-separated CORS origins env var into a list of origins."""
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
     host: str = Field(default="0.0.0.0", description="Server host")
     port: int = Field(default=8000, description="Server port")
@@ -30,7 +39,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = Field(default=30, description="Access token expiration in minutes")
 
     postgres_user: str = Field(default="postgres", description="PostgreSQL user")
-    postgres_password: str = Field(default=r"\HWqeE1u2/iVg2.gRo2z", description="PostgreSQL password")
+    postgres_password: str = Field(default="", description="PostgreSQL password (set via POSTGRES_PASSWORD in .env)")
     postgres_host: str = Field(default="localhost", description="PostgreSQL host")
     postgres_port: int = Field(default=5432, description="PostgreSQL port")
     postgres_db: str = Field(default="brainclone", description="PostgreSQL database name")
@@ -40,13 +49,14 @@ class Settings(BaseSettings):
     def postgres_url(self) -> str:
         return f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
 
-    neo4j_uri: str = Field(default="neo4j+s://896d4b81.databases.neo4j.io", description="Neo4j URI")
+    neo4j_uri: str = Field(default="", description="Neo4j URI (set via NEO4J_URI in .env)")
     neo4j_user: str = Field(default="neo4j", description="Neo4j user")
-    neo4j_password: str = Field(default="_GSrxhZwzVYI7nOfirY9Ve7TpbeeLTFsGxpX-sdeSTM", description="Neo4j password")
+    neo4j_password: str = Field(default="", description="Neo4j password (set via NEO4J_PASSWORD in .env)")
     neo4j_database: str = Field(default="neo4j", description="Neo4j database name")
 
-    r2r_base_url: str = Field(default="http://localhost:7272", description="R2R API base URL")
-    r2r_api_key: Optional[str] = Field(default=None, description="R2R API key if required")
+    # r2r disabled for lean deploy:
+    # r2r_base_url: str = Field(default="http://localhost:7272", description="R2R API base URL")
+    # r2r_api_key: Optional[str] = Field(default=None, description="R2R API key if required")
 
     redis_host: str = Field(default="localhost", description="Redis host")
     redis_port: int = Field(default=6379, description="Redis port")

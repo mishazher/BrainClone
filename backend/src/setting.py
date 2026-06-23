@@ -7,10 +7,12 @@ import uvicorn
 
 from .config import settings
 from .database import PostgresDB, Neo4jDB
-from .services import Neo4jService, VectorService, R2RService
+# NOTE: this module is an unused duplicate of main.py (the app entrypoint is
+# src.main:app). r2r references disabled here for consistency.
+from .services import Neo4jService, VectorService  # R2RService disabled (r2r removed)
 from .services.mock_data import MockDataService
 
-from .api.routes import documents, graph, search
+from .api.routes import graph, search  # documents router disabled (r2r removed)
 
 structlog.configure(
     processors=[
