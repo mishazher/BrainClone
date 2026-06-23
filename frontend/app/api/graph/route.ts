@@ -1,7 +1,61 @@
 
 import { NextRequest, NextResponse } from 'next/server';
+import { GraphData, GraphNode, NODE_COLORS, NodeType } from '@/types/graph';
 
+// Note: no trailing slash, and must include the /api/v1 prefix.
 const API_Base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+
+function categoryToType(category?: string): NodeType {
+  switch (category) {
+    case 'Person': return 'person';
+    case 'Location': return 'location';
+    case 'Event':
+    case 'Date':
+    default: return 'event';
+  }
+}
+
+// Transform the backend's raw cypher result ({ results: [{ n, r, m }] }) into the
+// { nodes, links } shape the frontend store expects. Done here (server-side) so the
+// browser never calls the backend directly — avoids CORS and the build-time URL bake.
+function resultsToGraphData(results: any[]): GraphData {
+  const nodes = new Map<string, GraphNode>();
+  const links: GraphData['links'] = [];
+  const linkSet = new Set<string>();
+
+  const addNode = (raw: any) => {
+    if (!raw || !raw.name || nodes.has(raw.name)) return;
+    const type = categoryToType(raw.category);
+    nodes.set(raw.name, {
+      id: raw.name,
+      name: raw.name,
+      type,
+      val: 1,
+      color: NODE_COLORS[type],
+      metadata: { description: raw.description, category: raw.category },
+    });
+  };
+
+  for (const record of results || []) {
+    addNode(record.n);
+    addNode(record.m);
+    if (record.r && record.n && record.m) {
+      const a = `${record.n.name}-${record.m.name}`;
+      const b = `${record.m.name}-${record.n.name}`;
+      if (!linkSet.has(a) && !linkSet.has(b)) {
+        links.push({
+          source: record.n.name,
+          target: record.m.name,
+          relationship: record.r.type || 'RELATED_TO',
+          strength: 1,
+        });
+        linkSet.add(a);
+      }
+    }
+  }
+
+  return { nodes: Array.from(nodes.values()), links };
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -28,8 +82,10 @@ export async function GET(request: NextRequest) {
     }
 
     const data = await response.json();
+    const graphData = resultsToGraphData(data.results);
 
-    return NextResponse.json(data);
+    // Shape matches what app/page.tsx expects: { success, data: { nodes, links } }
+    return NextResponse.json({ success: true, data: graphData });
 
   } catch (error) {
     console.error('Error fetching graph data from backend:', error);

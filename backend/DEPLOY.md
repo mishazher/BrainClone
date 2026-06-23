@@ -21,9 +21,14 @@ this stateless API is deployed here.
    gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com
    ```
 
-## Deploy
+## Deploy (Option A: one-off from CLI)
 
-Run from the **repo root** (`--source backend` points at this directory):
+Run from the **repo root** (`--source backend` points at this directory).
+
+`CORS_ORIGINS` is a **comma-separated** list of origins, and `--set-env-vars`
+also uses `,` to separate vars — so we override the delimiter with `^@^` (the
+text between the first two `^` becomes the separator, here `@`), which lets the
+CORS value keep its commas:
 
 ```bash
 gcloud run deploy brainclone-backend \
@@ -31,19 +36,31 @@ gcloud run deploy brainclone-backend \
   --region us-central1 \
   --allow-unauthenticated \
   --port 8080 \
-  --set-env-vars 'ENVIRONMENT=production,LOG_FORMAT=json' \
-  --set-env-vars 'CORS_ORIGINS=["https://brainclone.work","http://localhost:3000"]' \
-  --set-env-vars 'NEO4J_URI=neo4j+s://<id>.databases.neo4j.io' \
-  --set-env-vars 'NEO4J_USER=neo4j' \
-  --set-env-vars 'NEO4J_PASSWORD=<password>' \
-  --set-env-vars 'NEO4J_DATABASE=neo4j'
+  --set-env-vars "^@^ENVIRONMENT=production@LOG_FORMAT=json@CORS_ORIGINS=https://brainclone.work,http://localhost:3000@NEO4J_URI=neo4j+s://<id>.databases.neo4j.io@NEO4J_USER=neo4j@NEO4J_PASSWORD=<password>@NEO4J_DATABASE=neo4j"
 ```
 
-> Note: `,` separates vars, so the CORS JSON list (which has no commas here) is
-> fine. If you ever add a comma-containing value, use a `^@^`-delimited form:
-> `--set-env-vars '^@^CORS_ORIGINS=[...]@NEO4J_URI=...'`.
-
 First build takes ~3–5 min. The command prints an HTTPS service URL when done.
+
+## Deploy (Option B: continuously from GitHub)
+
+Build + deploy automatically on every push to `main` (uses Cloud Build).
+
+1. Cloud Run Console -> **Create service** -> **Continuously deploy from a
+   repository** -> **Set up with Cloud Build**.
+2. Authorize GitHub, pick repo **BrainCloneTeam/Brain-clone-divhacks**, branch
+   `^main$`.
+3. **Build type: Dockerfile.** Because this is a monorepo, set:
+   - **Build context directory:** `/backend`
+   - **Dockerfile path:** `/backend/Dockerfile`
+4. Set the env vars (same keys as Option A) in the **Variables & Secrets** tab —
+   here `CORS_ORIGINS` is just `https://brainclone.work,http://localhost:3000`
+   (no delimiter tricks needed in the UI).
+5. Allow unauthenticated invocations -> **Create**.
+
+> The changes in this repo must be **committed and pushed** first, or the build
+> will use stale source. Note: any push to the repo (incl. frontend-only) will
+> trigger a backend rebuild; add a Cloud Build trigger file filter later to
+> limit it to `backend/**` if that becomes noisy.
 
 ### Verify
 ```bash
@@ -60,10 +77,10 @@ curl https://<service-url>/health        # -> {"status":"demo_mode",...}
   gcloud run services update brainclone-backend --region us-central1 \
     --set-secrets 'NEO4J_PASSWORD=neo4j-password:latest'
   ```
-- **Update CORS later:**
+- **Update CORS later** (comma-separated origins):
   ```bash
   gcloud run services update brainclone-backend --region us-central1 \
-    --set-env-vars 'CORS_ORIGINS=["https://brainclone.work"]'
+    --set-env-vars 'CORS_ORIGINS=https://brainclone.work'
   ```
 
 ## ⚠️ Neo4j credentials

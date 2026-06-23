@@ -27,9 +27,9 @@ services:
         value: production
       - key: LOG_FORMAT
         value: json
-      # CORS for the Vercel frontend (JSON list; pydantic parses it).
+      # CORS for the Vercel frontend (comma-separated; parsed by cors_origins_list).
       - key: CORS_ORIGINS
-        value: '["https://brainclone.work","http://localhost:3000"]'
+        value: "https://brainclone.work,http://localhost:3000"
       # Neo4j connection — set these in the Render dashboard (kept out of git).
       - key: NEO4J_URI
         sync: false
