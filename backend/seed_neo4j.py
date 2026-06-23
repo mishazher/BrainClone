@@ -61,6 +61,11 @@ async def seed() -> None:
                     f"'{raw.get('type')}'. {exc}"
                 ) from exc
 
+            optional: dict = {}
+            if raw.get("created_at"):  # preserve real timestamps (e.g. journal entry dates)
+                optional["created_at"] = raw["created_at"]
+                optional["updated_at"] = raw.get("updated_at", raw["created_at"])
+
             entity = Entity(
                 type=etype,
                 name=raw["name"],
@@ -68,6 +73,7 @@ async def seed() -> None:
                 tags=raw.get("tags", []),
                 properties=raw.get("properties", {}),
                 confidence_score=raw.get("confidence_score", 1.0),
+                **optional,
             )
             eid = await service.create_entity(entity)
 

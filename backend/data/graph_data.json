@@ -17,48 +17,318 @@
     ],
     "note": "Delete these example entities/relationships and replace with your own. Keys starting with '_' are ignored."
   },
-
   "entities": [
     {
-      "key": "alice",
+      "key": "e0000000-0000-4000-8000-000000000001",
+      "name": "Misha",
       "type": "person",
-      "name": "Alice Smith",
-      "description": "Founder and lead engineer.",
-      "tags": ["founder", "engineer"],
-      "properties": { "occupation": "Software Engineer", "email": "alice@example.com" }
+      "description": "The author of the journal, studying Computer Science.",
+      "tags": ["author"]
     },
     {
-      "key": "bob",
+      "key": "e0000000-0000-4000-8000-000000000002",
+      "name": "Lizzy",
       "type": "person",
-      "name": "Bob Jones",
-      "description": "Designer who collaborates with Alice."
+      "description": "Misha's girlfriend.",
+      "tags": ["partner"]
     },
     {
-      "key": "acme",
-      "type": "organization",
-      "name": "Acme Inc.",
-      "description": "A startup building knowledge graphs."
+      "key": "e0000000-0000-4000-8000-000000000003",
+      "name": "Michael",
+      "type": "person",
+      "description": "Friend Misha plays Spikeball with."
     },
     {
-      "key": "launch_event",
-      "type": "event",
-      "name": "Acme Launch 2026",
-      "description": "Product launch event.",
-      "properties": { "date": "2026-03-01" }
+      "key": "e0000000-0000-4000-8000-000000000004",
+      "name": "Vigen",
+      "type": "person",
+      "description": "Friend Misha went on a short walk with."
     },
     {
-      "key": "sf",
+      "key": "e0000000-0000-4000-8000-000000000005",
+      "name": "Brad",
+      "type": "person",
+      "description": "Misha's 'Big' in the AKPsi fraternity."
+    },
+    {
+      "key": "e0000000-0000-4000-8000-000000000006",
+      "name": "Kaushik",
+      "type": "person",
+      "description": "Bloomberg engineer."
+    },
+    {
+      "key": "e0000000-0000-4000-8000-000000000007",
+      "name": "Professor Braverman",
+      "type": "person",
+      "description": "Heads an ML research lab, works at Google, from Khabarovsk."
+    },
+    {
+      "key": "e0000000-0000-4000-8000-000000000008",
+      "name": "Philip",
+      "type": "person",
+      "description": "Classmate and good friend in CSF."
+    },
+    {
+      "key": "e0000000-0000-4000-8000-000000000009",
+      "name": "Jaden",
+      "type": "person",
+      "description": "Host of Taco Tuesday."
+    },
+    {
+      "key": "e0000000-0000-4000-8000-000000000010",
+      "name": "Nora",
+      "type": "person",
+      "description": "Friend from Misha's day-one friendgroup."
+    },
+    {
+      "key": "e0000000-0000-4000-8000-000000000011",
+      "name": "Chicago",
       "type": "location",
-      "name": "San Francisco",
-      "description": "Where Acme is headquartered."
+      "description": "City Misha visited for the Jump Trading program."
+    },
+    {
+      "key": "e0000000-0000-4000-8000-000000000012",
+      "name": "New York",
+      "type": "location",
+      "description": "Location of the Bloomberg office."
+    },
+    {
+      "key": "e0000000-0000-4000-8000-000000000013",
+      "name": "Bloomberg Office",
+      "type": "location",
+      "description": "Inspirational and grand office Misha toured."
+    },
+    {
+      "key": "e0000000-0000-4000-8000-000000000014",
+      "name": "Khabarovsk",
+      "type": "location",
+      "description": "Professor Braverman's hometown."
+    },
+    {
+      "key": "e0000000-0000-4000-8000-000000000015",
+      "name": "Jump Program",
+      "type": "event",
+      "description": "Trading program event Misha attended in Chicago."
+    },
+    {
+      "key": "e0000000-0000-4000-8000-000000000016",
+      "name": "Taco Tuesday",
+      "type": "event",
+      "description": "Dinner event hosted by Jaden."
+    },
+    {
+      "key": "e0000000-0000-4000-8000-000000000017",
+      "name": "AKPsi Formal",
+      "type": "event",
+      "description": "Fraternity formal event."
+    },
+    {
+      "key": "d0000000-0000-4000-8000-000000000410",
+      "name": "Entry: Apr 10",
+      "type": "document",
+      "description": "Journal entry discussing Spikeball with Michael, Russian Gang, and clubbing with Lizzy.",
+      "created_at": "2026-04-10T00:00:00Z"
+    },
+    {
+      "key": "d0000000-0000-4000-8000-000000000413",
+      "name": "Entry: Apr 13",
+      "type": "document",
+      "description": "Journal entry about walking with Vigen, working on OOSE, and booking Chicago tickets.",
+      "created_at": "2026-04-13T00:00:00Z"
+    },
+    {
+      "key": "d0000000-0000-4000-8000-000000000416",
+      "name": "Entry: Apr 16",
+      "type": "document",
+      "description": "Journal entry discussing designing a paddle for Brad, and dinner with Bloomberg team including Kaushik.",
+      "created_at": "2026-04-16T00:00:00Z"
+    },
+    {
+      "key": "d0000000-0000-4000-8000-000000000417",
+      "name": "Entry: Apr 17",
+      "type": "document",
+      "description": "Detailed notes on the trip to Jump in Chicago, networking, and winning AirPods.",
+      "created_at": "2026-04-17T00:00:00Z"
+    },
+    {
+      "key": "d0000000-0000-4000-8000-000000000422",
+      "name": "Entry: Apr 22",
+      "type": "document",
+      "description": "Meeting Professor Braverman, AKPsi family dinner, and working on a quilt.",
+      "created_at": "2026-04-22T00:00:00Z"
+    },
+    {
+      "key": "d0000000-0000-4000-8000-000000000424",
+      "name": "Entry: Apr 24",
+      "type": "document",
+      "description": "Bloomberg visit in New York, touring the office, and networking with engineers.",
+      "created_at": "2026-04-24T00:00:00Z"
+    },
+    {
+      "key": "d0000000-0000-4000-8000-000000000505",
+      "name": "Entry: May 5",
+      "type": "document",
+      "description": "Probability exam day and attending Taco Tuesday with Jaden and Nora.",
+      "created_at": "2026-05-05T00:00:00Z"
+    },
+    {
+      "key": "d0000000-0000-4000-8000-000000000506",
+      "name": "Entry: May 6",
+      "type": "document",
+      "description": "Finals are over. Studied CSF with Philip, chilled with Lizzy on Freshman Quad.",
+      "created_at": "2026-05-06T00:00:00Z"
     }
   ],
-
   "relationships": [
-    { "source": "alice", "target": "acme", "type": "founded", "confidence_score": 1.0 },
-    { "source": "bob", "target": "alice", "type": "collaborates_with", "weight": 0.8 },
-    { "source": "alice", "target": "launch_event", "type": "attended" },
-    { "source": "launch_event", "target": "sf", "type": "located_in" },
-    { "source": "acme", "target": "sf", "type": "located_in" }
+    {
+      "key": "r0000000-0000-4000-8000-000000000001",
+      "source": "e0000000-0000-4000-8000-000000000001",
+      "target": "e0000000-0000-4000-8000-000000000002",
+      "type": "family_of"
+    },
+    {
+      "key": "r0000000-0000-4000-8000-000000000002",
+      "source": "e0000000-0000-4000-8000-000000000005",
+      "target": "e0000000-0000-4000-8000-000000000001",
+      "type": "mentor_of"
+    },
+    {
+      "key": "r0000000-0000-4000-8000-000000000003",
+      "source": "e0000000-0000-4000-8000-000000000001",
+      "target": "e0000000-0000-4000-8000-000000000008",
+      "type": "friend_of"
+    },
+    {
+      "key": "r0000000-0000-4000-8000-000000000004",
+      "source": "e0000000-0000-4000-8000-000000000001",
+      "target": "e0000000-0000-4000-8000-000000000011",
+      "type": "visited"
+    },
+    {
+      "key": "r0000000-0000-4000-8000-000000000005",
+      "source": "e0000000-0000-4000-8000-000000000001",
+      "target": "e0000000-0000-4000-8000-000000000015",
+      "type": "attended"
+    },
+    {
+      "key": "r0000000-0000-4000-8000-000000000006",
+      "source": "e0000000-0000-4000-8000-000000000015",
+      "target": "e0000000-0000-4000-8000-000000000011",
+      "type": "located_in"
+    },
+    {
+      "key": "r0000000-0000-4000-8000-000000000007",
+      "source": "e0000000-0000-4000-8000-000000000007",
+      "target": "e0000000-0000-4000-8000-000000000014",
+      "type": "born_in"
+    },
+    {
+      "key": "r0000000-0000-4000-8000-000000000008",
+      "source": "e0000000-0000-4000-8000-000000000013",
+      "target": "e0000000-0000-4000-8000-000000000012",
+      "type": "located_in"
+    },
+    {
+      "key": "r0000000-0000-4000-8000-000000000009",
+      "source": "d0000000-0000-4000-8000-000000000410",
+      "target": "e0000000-0000-4000-8000-000000000002",
+      "type": "contains"
+    },
+    {
+      "key": "r0000000-0000-4000-8000-000000000010",
+      "source": "d0000000-0000-4000-8000-000000000410",
+      "target": "e0000000-0000-4000-8000-000000000003",
+      "type": "contains"
+    },
+    {
+      "key": "r0000000-0000-4000-8000-000000000011",
+      "source": "d0000000-0000-4000-8000-000000000413",
+      "target": "e0000000-0000-4000-8000-000000000004",
+      "type": "contains"
+    },
+    {
+      "key": "r0000000-0000-4000-8000-000000000012",
+      "source": "d0000000-0000-4000-8000-000000000413",
+      "target": "e0000000-0000-4000-8000-000000000011",
+      "type": "contains"
+    },
+    {
+      "key": "r0000000-0000-4000-8000-000000000013",
+      "source": "d0000000-0000-4000-8000-000000000416",
+      "target": "e0000000-0000-4000-8000-000000000005",
+      "type": "contains"
+    },
+    {
+      "key": "r0000000-0000-4000-8000-000000000014",
+      "source": "d0000000-0000-4000-8000-000000000416",
+      "target": "e0000000-0000-4000-8000-000000000006",
+      "type": "contains"
+    },
+    {
+      "key": "r0000000-0000-4000-8000-000000000015",
+      "source": "d0000000-0000-4000-8000-000000000417",
+      "target": "e0000000-0000-4000-8000-000000000011",
+      "type": "contains"
+    },
+    {
+      "key": "r0000000-0000-4000-8000-000000000016",
+      "source": "d0000000-0000-4000-8000-000000000417",
+      "target": "e0000000-0000-4000-8000-000000000015",
+      "type": "contains"
+    },
+    {
+      "key": "r0000000-0000-4000-8000-000000000017",
+      "source": "d0000000-0000-4000-8000-000000000422",
+      "target": "e0000000-0000-4000-8000-000000000007",
+      "type": "contains"
+    },
+    {
+      "key": "r0000000-0000-4000-8000-000000000018",
+      "source": "d0000000-0000-4000-8000-000000000422",
+      "target": "e0000000-0000-4000-8000-000000000014",
+      "type": "contains"
+    },
+    {
+      "key": "r0000000-0000-4000-8000-000000000019",
+      "source": "d0000000-0000-4000-8000-000000000424",
+      "target": "e0000000-0000-4000-8000-000000000012",
+      "type": "contains"
+    },
+    {
+      "key": "r0000000-0000-4000-8000-000000000020",
+      "source": "d0000000-0000-4000-8000-000000000424",
+      "target": "e0000000-0000-4000-8000-000000000013",
+      "type": "contains"
+    },
+    {
+      "key": "r0000000-0000-4000-8000-000000000021",
+      "source": "d0000000-0000-4000-8000-000000000505",
+      "target": "e0000000-0000-4000-8000-000000000009",
+      "type": "contains"
+    },
+    {
+      "key": "r0000000-0000-4000-8000-000000000022",
+      "source": "d0000000-0000-4000-8000-000000000505",
+      "target": "e0000000-0000-4000-8000-000000000010",
+      "type": "contains"
+    },
+    {
+      "key": "r0000000-0000-4000-8000-000000000023",
+      "source": "d0000000-0000-4000-8000-000000000505",
+      "target": "e0000000-0000-4000-8000-000000000016",
+      "type": "contains"
+    },
+    {
+      "key": "r0000000-0000-4000-8000-000000000024",
+      "source": "d0000000-0000-4000-8000-000000000506",
+      "target": "e0000000-0000-4000-8000-000000000002",
+      "type": "contains"
+    },
+    {
+      "key": "r0000000-0000-4000-8000-000000000025",
+      "source": "d0000000-0000-4000-8000-000000000506",
+      "target": "e0000000-0000-4000-8000-000000000008",
+      "type": "contains"
+    }
   ]
 }

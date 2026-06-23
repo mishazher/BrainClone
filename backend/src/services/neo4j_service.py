@@ -66,7 +66,7 @@ class Neo4jService:
         """
         async with self.driver.session(database=self.database) as session:
             query = """
-            CREATE (e:Entity {props})
+            CREATE (e:Entity $props)
             SET e:""" + entity.type.value.capitalize() + """
             RETURN e.id as id
             """
