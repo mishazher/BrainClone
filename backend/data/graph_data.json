@@ -1,0 +1,64 @@
+{
+  "_instructions": {
+    "what": "Your real graph data. seed_neo4j.py WIPES Neo4j and reloads it from this file.",
+    "entities": "Each entity needs: key (unique local id, used only to link relationships), type, name. Optional: description, tags (list), confidence_score (0-1), properties (free-form object merged onto the node).",
+    "valid_entity_types": ["person", "event", "location", "organization", "concept", "document", "artifact"],
+    "frontend_note": "The 3D graph styles person/event/location with distinct colors; other types render with a default color.",
+    "relationships": "Each needs: source (an entity key), target (an entity key), type. Optional: weight (0-1), confidence_score (0-1), properties (object).",
+    "valid_relationship_types": [
+      "knows", "family_of", "friend_of", "colleague_of", "mentor_of",
+      "works_for", "employed_by", "manages", "collaborates_with", "founded", "owns",
+      "attended", "organized", "participated_in", "spoke_at", "hosted",
+      "located_in", "lived_in", "visited", "born_in", "died_in",
+      "authored", "cited", "mentioned_in", "references",
+      "parent_of", "child_of", "part_of", "contains",
+      "preceded_by", "followed_by", "concurrent_with",
+      "related_to", "similar_to", "opposite_of", "caused_by", "resulted_in"
+    ],
+    "note": "Delete these example entities/relationships and replace with your own. Keys starting with '_' are ignored."
+  },
+
+  "entities": [
+    {
+      "key": "alice",
+      "type": "person",
+      "name": "Alice Smith",
+      "description": "Founder and lead engineer.",
+      "tags": ["founder", "engineer"],
+      "properties": { "occupation": "Software Engineer", "email": "alice@example.com" }
+    },
+    {
+      "key": "bob",
+      "type": "person",
+      "name": "Bob Jones",
+      "description": "Designer who collaborates with Alice."
+    },
+    {
+      "key": "acme",
+      "type": "organization",
+      "name": "Acme Inc.",
+      "description": "A startup building knowledge graphs."
+    },
+    {
+      "key": "launch_event",
+      "type": "event",
+      "name": "Acme Launch 2026",
+      "description": "Product launch event.",
+      "properties": { "date": "2026-03-01" }
+    },
+    {
+      "key": "sf",
+      "type": "location",
+      "name": "San Francisco",
+      "description": "Where Acme is headquartered."
+    }
+  ],
+
+  "relationships": [
+    { "source": "alice", "target": "acme", "type": "founded", "confidence_score": 1.0 },
+    { "source": "bob", "target": "alice", "type": "collaborates_with", "weight": 0.8 },
+    { "source": "alice", "target": "launch_event", "type": "attended" },
+    { "source": "launch_event", "target": "sf", "type": "located_in" },
+    { "source": "acme", "target": "sf", "type": "located_in" }
+  ]
+}

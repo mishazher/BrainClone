@@ -40,8 +40,6 @@ export default function Graph3D({
   const {
     graphData,
     selectedNode,
-    hoveredNode,
-    highlightedNodes,
     highlightedLinks,
     filterByType,
     searchQuery,
@@ -129,20 +127,32 @@ export default function Graph3D({
       setHoveredNode(node);
       document.body.style.cursor = node ? 'pointer' : 'default';
 
+      let neighborNodes: Set<string> = new Set();
+      let neighborLinks: Set<string> = new Set();
       if (node) {
         const neighbors = getNeighbors(node.id);
-        useGraphStore.setState({
-          highlightedNodes: neighbors.nodes,
-          highlightedLinks: neighbors.links,
-        });
-      } else {
-        useGraphStore.setState({
-          highlightedNodes: new Set(),
-          highlightedLinks: new Set(),
-        });
+        neighborNodes = neighbors.nodes;
+        neighborLinks = neighbors.links;
       }
+
+      // Dim non-neighbours by mutating the existing sphere materials in place.
+      // This keeps the highlight effect but avoids regenerating node geometry
+      // on every pointer move (the previous cause of hover lag).
+      const dimming = neighborNodes.size > 0;
+      for (const n of filteredData.nodes as any[]) {
+        const mat = n.__sphereMaterial;
+        if (!mat) continue;
+        mat.opacity = dimming ? (neighborNodes.has(n.id) ? 1 : 0.2) : 1.0;
+      }
+
+      // Edge highlighting stays in React state — it only re-evaluates cheap link
+      // color/width accessors, not the node objects.
+      useGraphStore.setState({
+        highlightedNodes: neighborNodes,
+        highlightedLinks: neighborLinks,
+      });
     },
-    [setHoveredNode, getNeighbors]
+    [setHoveredNode, getNeighbors, filteredData]
   );
 
   const handleBackgroundClick = useCallback(() => {
@@ -256,7 +266,10 @@ export default function Graph3D({
       const nodeColor = node.color || NODE_COLORS[node.type as NodeType];
       const group = new THREE.Group();
       const nodeSize = (node.val || 6) * 2.5; // Make nodes 2.5x bigger (thick balls)
-      const isSelected = hoveredNode === node || selectedNode === node;
+      // Note: intentionally NOT driven by hoveredNode/highlightedNodes — those
+      // change on every pointer-move and would rebuild every node's meshes.
+      // Hover feedback is handled cheaply via edge (linkColor) highlighting.
+      const isSelected = selectedNode === node;
       const isOverviewTarget = isOverviewActive && selectedNode === node;
 
       // Create outer glow layers first (so they render behind the main sphere)
@@ -319,11 +332,12 @@ export default function Graph3D({
         emissiveIntensity: isOverviewTarget ? 3.0 : (isSelected ? 2.0 : 1.5),
         shininess: 10,
         transparent: true,
-        opacity: highlightedNodes.size > 0
-          ? highlightedNodes.has(node.id) ? 1 : 0.2
-          : 1.0,
+        opacity: 1.0,
       });
       const sphere = new THREE.Mesh(geometry, material);
+      // Keep a ref to the sphere material so hover highlighting can adjust opacity
+      // in place (cheap) instead of rebuilding the whole node object every hover.
+      node.__sphereMaterial = material;
       group.add(sphere);
 
       // Add text label
@@ -344,7 +358,7 @@ export default function Graph3D({
       const material = new THREE.MeshBasicMaterial({ color: 0x3B82F6 });
       return new THREE.Mesh(geometry, material);
     }
-  }, [highlightedNodes, hoveredNode, selectedNode, isOverviewActive]);
+  }, [selectedNode, isOverviewActive]);
 
   const linkColor = useCallback((link: any) => {
     const sourceId = typeof link.source === 'string' ? link.source : link.source.id;
