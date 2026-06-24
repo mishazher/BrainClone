@@ -2,7 +2,7 @@
 
 Bring your memories back to life. Transform journal entries, photos, and documents into an AI-powered 3D knowledge graph of people, places, and moments — then explore and query them conversationally.
 
-<img width="1705" height="1170" alt="BrainClone 3D knowledge graph" src="https://github.com/user-attachments/assets/4ac6691d-14dd-4a4e-893e-956cff0e8063" />
+<img width="1705" height="1170" alt="BrainClone 3D knowledge graph" src="https://github.com/mishazher/BrainClone/BrainClone.png" />
 
 ## Features
 
