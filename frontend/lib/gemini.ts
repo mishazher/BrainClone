@@ -23,7 +23,7 @@ export interface JournalAnalysis {
 }
 
 export class GeminiService {
-  private model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+  private model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
 
   /**
    * Call the model, retrying on transient overload (503) / rate-limit (429)
