@@ -16,8 +16,5 @@ test_write_neo4j.py
 seed_neo4j.py
 populate_extended_neo4j.py
 
-# Other platforms' deploy configs (this app deploys via the Dockerfile).
-vercel.json
-fly.toml
-railway.json
+# Not needed in the Cloud Run image (built via Dockerfile).
 Procfile
