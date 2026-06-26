@@ -1,0 +1,136 @@
+# Cloud Run multi-container service: FastAPI backend (ingress) + R2R (sidecar).
+#
+# The two containers share a network namespace, so the backend reaches R2R over
+# localhost:7272 — the same R2R_BASE_URL default the code already uses. R2R is
+# NOT exposed publicly (it has no `ports:` block); only the backend is.
+#
+# Replace before applying:
+#   PROJECT_ID  REGION              -> your GCP project + region (e.g. us-central1)
+#   <neo4j-id>                      -> Neo4j Aura instance id
+#   <supabase-region> <project-ref> -> Supabase pooler host + user
+#   brainclone.work                 -> your frontend origin(s)
+# Secrets (neo4j-password, gemini-api-key, supabase-db-password) come from
+# Secret Manager — see DEPLOY.md.
+#
+# Apply with:  gcloud run services replace deploy/cloudrun/service.yaml --region REGION
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: brainclone
+  labels:
+    cloud.googleapis.com/location: REGION
+spec:
+  template:
+    metadata:
+      annotations:
+        # R2R boots slowly (~30-60s) and is heavy — keep one instance warm.
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "2"
+        # Don't throttle CPU when no request is in flight, or the R2R sidecar stalls.
+        run.googleapis.com/cpu-throttling: "false"
+        run.googleapis.com/startup-cpu-boost: "true"
+        # Start the backend only after the R2R sidecar passes its startup probe.
+        run.googleapis.com/container-dependencies: '{"backend":["r2r"]}'
+    spec:
+      containerConcurrency: 40
+      timeoutSeconds: 300
+      containers:
+        # ---- Ingress container: FastAPI backend (serves on $PORT = 8080) ----
+        - name: backend
+          image: REGION-docker.pkg.dev/PROJECT_ID/brainclone/backend:latest
+          ports:
+            - name: http1
+              containerPort: 8080
+          env:
+            - name: ENVIRONMENT
+              value: production
+            - name: LOG_FORMAT
+              value: json
+            - name: CORS_ORIGINS
+              value: https://brainclone.work,http://localhost:3000
+            # The R2R sidecar, reachable on the shared loopback.
+            - name: R2R_BASE_URL
+              value: http://localhost:7272
+            # Neo4j Aura (username/database are normally "neo4j", NOT the instance id)
+            - name: NEO4J_URI
+              value: neo4j+s://<neo4j-id>.databases.neo4j.io
+            - name: NEO4J_USER
+              value: neo4j
+            - name: NEO4J_DATABASE
+              value: neo4j
+            - name: NEO4J_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: neo4j-password
+                  key: latest
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: gemini-api-key
+                  key: latest
+            # Backend's own pgvector store — Supabase via the SESSION pooler (IPv4).
+            - name: POSTGRES_HOST
+              value: <supabase-region>.pooler.supabase.com
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: POSTGRES_USER
+              value: postgres.<project-ref>
+            - name: POSTGRES_DB
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: supabase-db-password
+                  key: latest
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          startupProbe:
+            tcpSocket:
+              port: 8080
+            failureThreshold: 10
+            periodSeconds: 5
+        # ---- Sidecar: R2R document-RAG server (private, localhost:7272) ----
+        - name: r2r
+          image: REGION-docker.pkg.dev/PROJECT_ID/brainclone/r2r:latest
+          env:
+            - name: R2R_HOST
+              value: 0.0.0.0
+            - name: R2R_PORT
+              value: "7272"
+            - name: R2R_PROJECT_NAME
+              value: brainclone
+            - name: R2R_CONFIG_PATH
+              value: /app/config/config.toml
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: gemini-api-key
+                  key: latest
+            # R2R's own tables live in the same Supabase DB, namespaced by project
+            # name (schema "brainclone"). Session pooler (5432) — R2R runs DDL/
+            # migrations that the transaction pooler (6543) can break.
+            - name: R2R_POSTGRES_HOST
+              value: <supabase-region>.pooler.supabase.com
+            - name: R2R_POSTGRES_PORT
+              value: "5432"
+            - name: R2R_POSTGRES_USER
+              value: postgres.<project-ref>
+            - name: R2R_POSTGRES_DBNAME
+              value: postgres
+            - name: R2R_POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: supabase-db-password
+                  key: latest
+          resources:
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          startupProbe:
+            tcpSocket:
+              port: 7272
+            failureThreshold: 30
+            periodSeconds: 10
+            timeoutSeconds: 5

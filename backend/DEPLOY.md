@@ -1,91 +1,155 @@
-# Deploying the BrainClone backend to Google Cloud Run
+# Deploying BrainClone (backend + R2R) to Google Cloud Run
 
-FastAPI + Neo4j (lean build, no r2r). The image is built from `Dockerfile` and
-binds to `$PORT` (Cloud Run injects `8080`). Neo4j data lives in Neo4j Aura — only
-this stateless API is deployed here.
+This deploys **both the FastAPI app and the R2R sidecar in a single Cloud Run container**.
+
+The container runs a start script (`start.sh`) that boots both services. They share a network namespace, so the backend talks to R2R over **`localhost:7272`** — the exact `R2R_BASE_URL` default the code already uses.
+R2R is never exposed publicly. All durable state lives in **Neo4j Aura** and **Supabase** (Postgres + pgvector); the container itself is stateless.
+
+```
+            ┌──────────────── Cloud Run service "brainclone" ────────────────┐
+ Internet → │  backend :8080  ──localhost:7272──►  r2r (background process)  │
+            └───────────┬───────────────────────────────┬────────────────────┘
+                        │                                │
+                  Neo4j Aura                    Supabase (Postgres + pgvector)
+```
+
+> **Why a custom image?** Cloud Run allows multi-container deployments, but a unified image simplifies the `gcloud run deploy` command and lifecycle management. We build a unified image, push to Artifact Registry, and apply a service YAML (`deploy/cloudrun/service.yaml`).
+
+---
 
 ## One-time setup
 
-1. **Create a GCP project & enable billing** (free tier covers a demo; a card is
-   required). New accounts get a $300 / 90-day credit.
+1. **GCP project + billing.** Free tier covers a low-traffic demo, but see the
+   cost note below — a warm R2R sidecar is **not** free. New accounts get $300/90 days.
 
-2. **Authenticate and select the project** (run these yourself — they're
-   interactive). In Claude Code you can run them inline with the `!` prefix:
+2. **Authenticate** (interactive — run inline with the `!` prefix in Claude Code):
    ```bash
    gcloud auth login
    gcloud config set project YOUR_PROJECT_ID
    ```
 
-3. **Enable the required APIs:**
+3. **Enable APIs:**
    ```bash
-   gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com
+   gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
+     artifactregistry.googleapis.com secretmanager.googleapis.com
    ```
 
-## Deploy (Option A: one-off from CLI)
+4. **Create an Artifact Registry repo** (once):
+   ```bash
+   gcloud artifacts repositories create brainclone \
+     --repository-format=docker --location=REGION
+   gcloud auth configure-docker REGION-docker.pkg.dev
+   ```
 
-Run from the **repo root** (`--source backend` points at this directory).
+---
 
-`CORS_ORIGINS` is a **comma-separated** list of origins, and `--set-env-vars`
-also uses `,` to separate vars — so we override the delimiter with `^@^` (the
-text between the first two `^` becomes the separator, here `@`), which lets the
-CORS value keep its commas:
+## Step 1 — Build & push the unified image
+
+Run from the **repo root**. Replace `PROJECT_ID` / `REGION` (e.g. `us-central1`).
 
 ```bash
-gcloud run deploy brainclone-backend \
-  --source backend \
-  --region us-central1 \
-  --allow-unauthenticated \
-  --port 8080 \
-  --set-env-vars "^@^ENVIRONMENT=production@LOG_FORMAT=json@CORS_ORIGINS=https://brainclone.work,http://localhost:3000@NEO4J_URI=neo4j+s://<id>.databases.neo4j.io@NEO4J_USER=neo4j@NEO4J_PASSWORD=<password>@NEO4J_DATABASE=neo4j"
+# We use the repository root as the build context to include both the backend 
+# and the r2r-config/config.toml file.
+docker build -f backend/Dockerfile \
+  -t REGION-docker.pkg.dev/PROJECT_ID/brainclone/backend:latest .
+docker push REGION-docker.pkg.dev/PROJECT_ID/brainclone/backend:latest
 ```
 
-First build takes ~3–5 min. The command prints an HTTPS service URL when done.
+> The unified image contains both FastAPI dependencies and R2R. The first push is slow. (You can also build it with Cloud Build via a small `cloudbuild.yaml` if you'd rather not push locally.)
 
-## Deploy (Option B: continuously from GitHub)
+## Step 2 — Create secrets
 
-Build + deploy automatically on every push to `main` (uses Cloud Build).
+```bash
+echo -n '<neo4j-password>'   | gcloud secrets create neo4j-password      --data-file=-
+echo -n '<gemini-api-key>'   | gcloud secrets create gemini-api-key      --data-file=-
+echo -n '<supabase-db-pass>' | gcloud secrets create supabase-db-password --data-file=-
+```
 
-1. Cloud Run Console -> **Create service** -> **Continuously deploy from a
-   repository** -> **Set up with Cloud Build**.
-2. Authorize GitHub, pick repo **BrainCloneTeam/Brain-clone-divhacks**, branch
-   `^main$`.
-3. **Build type: Dockerfile.** Because this is a monorepo, set:
-   - **Build context directory:** `/backend`
-   - **Dockerfile path:** `/backend/Dockerfile`
-4. Set the env vars (same keys as Option A) in the **Variables & Secrets** tab —
-   here `CORS_ORIGINS` is just `https://brainclone.work,http://localhost:3000`
-   (no delimiter tricks needed in the UI).
-5. Allow unauthenticated invocations -> **Create**.
+Grant the Cloud Run runtime service account access (replace the project number):
+```bash
+for S in neo4j-password gemini-api-key supabase-db-password; do
+  gcloud secrets add-iam-policy-binding $S \
+    --member="serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
+    --role="roles/secretmanager.secretAccessor"
+done
+```
 
-> The changes in this repo must be **committed and pushed** first, or the build
-> will use stale source. Note: any push to the repo (incl. frontend-only) will
-> trigger a backend rebuild; add a Cloud Build trigger file filter later to
-> limit it to `backend/**` if that becomes noisy.
+## Step 3 — Fill in & apply the service spec
+
+Edit `deploy/cloudrun/service.yaml` and replace the placeholders:
+
+| Placeholder | Value |
+|---|---|
+| `PROJECT_ID`, `REGION` | your GCP project + region |
+| `<neo4j-id>` | Neo4j Aura instance id (in the URI host) |
+| `<supabase-region>` | Supabase **pooler** host, e.g. `aws-0-us-east-1` |
+| `<project-ref>` | Supabase project ref → user `postgres.<project-ref>` |
+| `brainclone.work` | your frontend origin(s) for CORS |
+
+Then apply and open it up:
+```bash
+gcloud run services replace deploy/cloudrun/service.yaml --region REGION
+gcloud run services add-iam-policy-binding brainclone --region REGION \
+  --member=allUsers --role=roles/run.invoker
+```
 
 ### Verify
 ```bash
-curl https://<service-url>/health        # -> {"status":"demo_mode",...}
+URL=$(gcloud run services describe brainclone --region REGION --format='value(status.url)')
+curl $URL/health        # services.r2r should be "healthy"
 ```
 
-## Common follow-ups
+---
 
-- **Keep it always warm** (no cold starts): add `--min-instances 1`.
-  Default is scale-to-zero (~2–5s cold start, no idle cost).
-- **Secrets via Secret Manager** (instead of plaintext env vars):
-  ```bash
-  echo -n '<password>' | gcloud secrets create neo4j-password --data-file=-
-  gcloud run services update brainclone-backend --region us-central1 \
-    --set-secrets 'NEO4J_PASSWORD=neo4j-password:latest'
-  ```
-- **Update CORS later** (comma-separated origins):
-  ```bash
-  gcloud run services update brainclone-backend --region us-central1 \
-    --set-env-vars 'CORS_ORIGINS=https://brainclone.work'
-  ```
+## ⚠️ Supabase connection — use the POOLER, not the direct host
 
-## ⚠️ Neo4j credentials
+The **direct** connection `db.<ref>.supabase.co:5432` is **IPv6-only** and won't
+resolve from Cloud Run (IPv4 egress) — it fails with `getaddrinfo failed`. Use the
+**Supavisor pooler** host instead:
 
-Neo4j Aura's username and database name are normally both `neo4j` (the instance
-id, e.g. `1b21c8b6`, is **not** the username/database). Your local `.env` sets
-`NEO4J_USER` / `NEO4J_DATABASE` to the instance id — double-check these or the
-connection will fail. The example above uses the typical `neo4j` values.
+- Host: `<region>.pooler.supabase.com` (from Dashboard → **Connect**)
+- User: `postgres.<project-ref>` &nbsp; DB: `postgres`
+- **Port 5432 = session pooler** (used here). R2R runs DDL/migrations + advisory
+  locks that the **transaction pooler (6543) can break**, so session mode is safer
+  for the R2R container. The backend's own asyncpg pools set `statement_cache_size=0`,
+  so either pooler mode works for them.
+
+Backend and R2R share the same Supabase database: R2R writes to a schema named
+after `R2R_PROJECT_NAME` (`brainclone`); the backend's `vector_service` uses
+`public`. No table collisions. Enable the extension once: `create extension if not
+exists vector;`.
+
+## 💰 Free-tier reality
+
+R2R is heavy (~2 GB RAM, multi-GB image, 30–60s boot), so:
+
+- **`minScale: 1`** (in the YAML) keeps R2R warm — this **leaves Always Free** and
+  bills idle CPU/memory (a few $/month). Without it, every cold request waits the
+  full R2R boot (likely timeouts) — bad UX but ~free at idle.
+- The instance memory is the **sum** of both containers (here ~5 GiB). Tune the
+  `resources.limits` down if you can; raise `maxScale` only as traffic needs.
+- `cpu-throttling: false` is required so the sidecar keeps running between requests.
+
+## Neo4j credentials
+
+Neo4j Aura's username and database are normally both `neo4j` (the instance id,
+e.g. `1b21c8b6`, is **not** the username/database). Your local `.env` currently
+sets `NEO4J_USER`/`NEO4J_DATABASE` to the instance id — fix those in the YAML or
+the connection will fail. The spec uses the typical `neo4j` values.
+
+## Security note
+
+The R2R sidecar has no `ports:` block, so it is unreachable from the internet —
+only the backend can hit it over loopback. R2R auth is off in `config.toml`, which
+is acceptable here. For defense-in-depth you can still enable R2R auth
+(`require_authentication = true`) and pass a token via `R2R_API_KEY` to the backend.
+
+---
+
+## Frontend (Vercel)
+
+The Next.js frontend deploys separately to Vercel. Point it at this service:
+```
+NEXT_PUBLIC_API_URL=https://<cloud-run-url>/api/v1
+```
+(The `/api/v1` suffix matters — the chat/graph proxies call `${NEXT_PUBLIC_API_URL}/chat`, etc.)
