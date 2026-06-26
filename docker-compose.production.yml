@@ -18,21 +18,24 @@ services:
       timeout: 5s
       retries: 5
 
-  # R2R Service
+  # R2R document-RAG service (v3.6.6, Gemini-only via LiteLLM).
+  # NOTE: in production the Postgres below is Supabase — point R2R_POSTGRES_*
+  # at the Supabase pooler (port 6543/5432) and enable the `vector` extension.
   r2r:
-    image: ragtoriches/r2r:latest
+    image: sciphiai/r2r:latest
     ports:
-      - "7272:7272"
+      - "7272:8000"   # container listens on 8000; expose as 7272 on the host
     environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DBNAME: r2r
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      R2R_CONFIG_PATH: /app/config/config.yaml
+      R2R_PROJECT_NAME: brainclone
+      R2R_CONFIG_PATH: /app/config/config.toml
+      R2R_POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
+      R2R_POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      R2R_POSTGRES_USER: ${POSTGRES_USER}
+      R2R_POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      R2R_POSTGRES_DBNAME: ${R2R_POSTGRES_DBNAME:-r2r}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
     volumes:
-      - ./r2r-config:/app/config
+      - ./r2r-config:/app/config:ro
       - r2r_data:/app/data
     depends_on:
       postgres:
@@ -50,8 +53,8 @@ services:
       NEO4J_URI: ${NEO4J_URI}
       NEO4J_USER: ${NEO4J_USER}
       NEO4J_PASSWORD: ${NEO4J_PASSWORD}
-      R2R_BASE_URL: http://r2r:7272
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      R2R_BASE_URL: http://r2r:8000
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       CORS_ORIGINS: ${CORS_ORIGINS}
     depends_on:

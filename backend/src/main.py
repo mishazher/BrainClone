@@ -10,7 +10,7 @@ from .database import PostgresDB, Neo4jDB
 from .services import Neo4jService, VectorService  # R2RService disabled (r2r removed)
 from .services.mock_data import MockDataService
 
-from .api.routes import graph, search  # documents router disabled (r2r removed)
+from .api.routes import graph, search, documents, chat
 
 structlog.configure(
     processors=[
@@ -115,12 +115,15 @@ async def health_check():
         "services": {}
     }
 
+    # Probe the external R2R server (document-RAG + Gemini embeddings/extraction).
+    from .services import R2RService
+    async with R2RService() as r2r_service:
+        r2r_health = await r2r_service.health_check()
+    health_status["services"]["r2r"] = "healthy" if r2r_health.get("connected") else "unavailable"
     health_status["services"]["postgres"] = "demo_mode"
     health_status["services"]["neo4j"] = "demo_mode"
-    health_status["services"]["r2r"] = "demo_mode"
     health_status["services"]["mock_data"] = "active"
-    health_status["status"] = "demo_mode"
-    health_status["message"] = "BrainClone running with sample memory data"
+    health_status["message"] = "BrainClone backend; R2R document-RAG via Gemini"
 
     return health_status
 
@@ -136,12 +139,11 @@ async def root():
     }
 
 
-# documents router disabled (r2r removed for lean deploy):
-# app.include_router(
-#     documents.router,
-#     prefix=f"{settings.api_v1_prefix}",
-#     tags=["documents"]
-# )
+app.include_router(
+    documents.router,
+    prefix=f"{settings.api_v1_prefix}",
+    tags=["documents"]
+)
 
 app.include_router(
     graph.router,
@@ -153,6 +155,12 @@ app.include_router(
     search.router,
     prefix=f"{settings.api_v1_prefix}",
     tags=["search"]
+)
+
+app.include_router(
+    chat.router,
+    prefix=f"{settings.api_v1_prefix}",
+    tags=["chat"]
 )
 
 

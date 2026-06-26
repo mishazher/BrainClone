@@ -54,9 +54,13 @@ class Settings(BaseSettings):
     neo4j_password: str = Field(default="", description="Neo4j password (set via NEO4J_PASSWORD in .env)")
     neo4j_database: str = Field(default="neo4j", description="Neo4j database name")
 
-    # r2r disabled for lean deploy:
-    # r2r_base_url: str = Field(default="http://localhost:7272", description="R2R API base URL")
-    # r2r_api_key: Optional[str] = Field(default=None, description="R2R API key if required")
+    # R2R document-RAG service (external server, Gemini-backed via LiteLLM)
+    r2r_base_url: str = Field(default="http://localhost:7272", description="R2R API base URL")
+    r2r_api_key: Optional[str] = Field(default=None, description="R2R API key if required")
+
+    # Gemini powers both R2R completion/KG-extraction and embeddings (via LiteLLM).
+    gemini_api_key: str = Field(default="", description="Google Gemini API key (set via GEMINI_API_KEY in .env)")
+    gemini_chat_model: str = Field(default="gemini-2.5-pro", description="Gemini model for backend chatbot responses")
 
     redis_host: str = Field(default="localhost", description="Redis host")
     redis_port: int = Field(default=6379, description="Redis port")
@@ -70,7 +74,7 @@ class Settings(BaseSettings):
             return f"redis://:{self.redis_password}@{self.redis_host}:{self.redis_port}/{self.redis_db}"
         return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
 
-    vector_dimension: int = Field(default=512, description="Vector embedding dimension")
+    vector_dimension: int = Field(default=768, description="Vector embedding dimension (Gemini text-embedding-004 = 768)")
     similarity_threshold: float = Field(default=0.7, description="Similarity threshold for vector search")
     max_search_results: int = Field(default=50, description="Maximum number of search results")
     max_graph_depth: int = Field(default=3, description="Maximum depth for graph traversal")

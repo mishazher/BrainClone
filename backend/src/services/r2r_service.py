@@ -1,28 +1,32 @@
 """R2R service for document processing and RAG operations.
 
-DISABLED: r2r (document-RAG) is not part of the lean deploy. This module is no
-longer imported anywhere (see services/__init__.py) and `r2r`/`tenacity` are no
-longer installed. To re-enable, restore the imports below, reinstate the
-dependencies in requirements.txt, and re-add the routers in main.py.
+Talks to an external R2R server (v3.x, image `sciphiai/r2r`) over its REST API
+using plain httpx — no heavyweight `r2r` SDK dependency, so the backend isn't
+coupled to R2R's internal package version. R2R itself is configured Gemini-only
+(see `r2r-config/config.toml`): Gemini embeddings (gemini-embedding-001 @ 768d)
+and Gemini completion/KG-extraction (gemini-2.5-flash), all via LiteLLM.
+
+Verified endpoints (R2R v3):
+  POST   /v3/documents                      ingest (multipart: file | raw_text)
+  POST   /v3/documents/{id}/extract         run KG entity/relation extraction
+  GET    /v3/documents/{id}/chunks          chunks (+ embeddings)
+  GET    /v3/documents/{id}/entities        extracted entities
+  GET    /v3/documents/{id}/relationships   extracted relationships
+  GET    /v3/documents/{id}                 document metadata/status
+  GET    /v3/documents                      list documents
+  DELETE /v3/documents/{id}                 delete
+  POST   /v3/retrieval/search               hybrid/semantic search
+  POST   /v3/retrieval/rag                  RAG completion
+  GET    /v3/health                         health
 """
 
-import os
-import tempfile
+import asyncio
 from collections.abc import AsyncGenerator
-from pathlib import Path
 from typing import Any
 
 import httpx
 import structlog
 from fastapi import UploadFile
-# r2r disabled for lean deploy:
-# from r2r import R2RClient
-# from tenacity import (
-#     retry,
-#     retry_if_exception_type,
-#     stop_after_attempt,
-#     wait_exponential,
-# )
 
 from ..config import settings
 
@@ -32,477 +36,245 @@ logger = structlog.get_logger(__name__)
 class R2RServiceError(Exception):
     """Base exception for R2R service errors."""
 
-    pass
-
 
 class R2RConnectionError(R2RServiceError):
-    """Exception raised when connection to R2R fails."""
-
-    pass
+    """Raised when connection to R2R fails."""
 
 
 class R2RIngestionError(R2RServiceError):
-    """Exception raised when document ingestion fails."""
-
-    pass
+    """Raised when document ingestion fails."""
 
 
 class R2RService:
-    """Service for R2R document processing and RAG operations."""
+    """Async REST client for an external R2R server."""
 
     SUPPORTED_FORMATS = {"pdf", "docx", "txt", "html", "md", "csv", "json"}
     ENTITY_TYPES = ["Person", "Event", "Location"]
 
-    def __init__(self, base_url: str = "http://localhost:7272"):
-        """Initialize R2R service client."""
-        self.base_url = base_url or settings.r2r_base_url
-        self.client = R2RClient(self.base_url)
-        self._httpx = httpx.AsyncClient(
-            timeout=httpx.Timeout(5.0, connect=2.0),
-            headers={"Accept": "application/json"},
+    def __init__(self, base_url: str | None = None):
+        self.base_url = (base_url or settings.r2r_base_url).rstrip("/")
+        headers = {"Accept": "application/json"}
+        if settings.r2r_api_key:
+            headers["Authorization"] = f"Bearer {settings.r2r_api_key}"
+        # Generous timeout: KG extraction calls Gemini and can take a while.
+        self._http = httpx.AsyncClient(
+            base_url=self.base_url,
+            timeout=httpx.Timeout(120.0, connect=5.0),
+            headers=headers,
         )
-        self._temp_dir = tempfile.gettempdir()
-
         logger.info("R2R service initialized", base_url=self.base_url)
 
+    # -- low-level helpers ---------------------------------------------------
+
+    async def _request(self, method: str, path: str, *, retries: int = 2, **kwargs) -> dict[str, Any]:
+        """Issue a request with simple exponential backoff on transient errors."""
+        last_exc: Exception | None = None
+        for attempt in range(retries + 1):
+            try:
+                resp = await self._http.request(method, path, **kwargs)
+                resp.raise_for_status()
+                return resp.json()
+            except (httpx.TimeoutException, httpx.NetworkError, httpx.ConnectError) as exc:
+                last_exc = exc
+                if attempt == retries:
+                    break
+                await asyncio.sleep(2 ** attempt)
+            except httpx.HTTPStatusError as exc:
+                # Don't retry 4xx; surface the server's message.
+                detail = exc.response.text[:300]
+                raise R2RServiceError(f"R2R {method} {path} -> {exc.response.status_code}: {detail}") from exc
+        raise R2RConnectionError(f"R2R {method} {path} failed: {last_exc}") from last_exc
+
+    @staticmethod
+    def _results(payload: dict[str, Any]) -> Any:
+        """R2R wraps everything in a top-level `results` key."""
+        return payload.get("results", payload)
+
+    # -- health --------------------------------------------------------------
+
     async def health_check(self) -> dict[str, Any]:
-        """Check R2R service health."""
         try:
-            response = await self._httpx.get(f"{self.base_url}/v3/health")
-            if response.status_code == 200:
-                return {
-                    "status": "healthy",
-                    "connected": True,
-                    "details": response.json(),
-                }
-            else:
-                return {
-                    "status": "unhealthy",
-                    "connected": False,
-                    "error": f"Health check returned {response.status_code}",
-                }
-        except Exception as e:
+            payload = await self._request("GET", "/v3/health", retries=0)
+            return {"status": "healthy", "connected": True, "details": self._results(payload)}
+        except Exception as e:  # noqa: BLE001 - health must never raise
             logger.warning("R2R health check failed", error=str(e))
-            return {
-                "status": "unavailable",
-                "connected": False,
-                "error": str(e),
-                "fallback_mode": True,
-            }
+            return {"status": "unavailable", "connected": False, "error": str(e), "fallback_mode": True}
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type((httpx.TimeoutException, httpx.NetworkError)),
-        reraise=True,
-    )
+    # -- ingestion -----------------------------------------------------------
+
     async def ingest_document(
-        self, file: UploadFile, metadata: dict[str, Any] | None = None
+        self,
+        file: UploadFile,
+        metadata: dict[str, Any] | None = None,
+        ingestion_mode: str = "fast",
     ) -> dict[str, Any]:
-        """
-        Ingest document with entity extraction.
-
-        Args:
-            file: The uploaded file to ingest
-            metadata: Optional metadata to attach to the document
-
-        Returns:
-            Document information including ID and status
-        """
-        # Validate file format
-        file_extension = file.filename.split(".")[-1].lower() if file.filename else ""
-        if file_extension not in self.SUPPORTED_FORMATS:
+        """Ingest an uploaded file: chunk + embed (Gemini) into R2R/pgvector."""
+        ext = file.filename.rsplit(".", 1)[-1].lower() if file.filename and "." in file.filename else ""
+        if ext not in self.SUPPORTED_FORMATS:
             raise ValueError(
-                f"Unsupported file format: {file_extension}. "
-                f"Supported formats: {', '.join(self.SUPPORTED_FORMATS)}"
+                f"Unsupported file format: {ext!r}. Supported: {', '.join(sorted(self.SUPPORTED_FORMATS))}"
             )
 
-        temp_path = None
+        content = await file.read()
+        await file.seek(0)
+        files = {"file": (file.filename, content, file.content_type or "application/octet-stream")}
+        data: dict[str, Any] = {"ingestion_mode": ingestion_mode}
+        if metadata:
+            import json
+            data["metadata"] = json.dumps(metadata)
+
+        logger.info("Ingesting document", filename=file.filename, size=len(content))
         try:
-            # Save file temporarily
-            temp_path = Path(self._temp_dir) / f"upload_{file.filename}"
-            content = await file.read()
-            await file.seek(0)  # Reset for potential reuse
+            results = self._results(await self._request("POST", "/v3/documents", files=files, data=data))
+        except R2RServiceError as e:
+            raise R2RIngestionError(str(e)) from e
 
-            with open(temp_path, "wb") as f:
-                f.write(content)
+        return {
+            "document_id": results.get("document_id"),
+            "status": "ingested",
+            "task_id": results.get("task_id"),
+            "filename": file.filename,
+        }
 
-            logger.info(
-                "Ingesting document",
-                filename=file.filename,
-                size=len(content),
-                temp_path=str(temp_path),
+    async def extract_graph(self, document_id: str, run_with_orchestration: bool = False) -> dict[str, Any]:
+        """Run Gemini-backed KG extraction (entities + relationships) for a document."""
+        results = self._results(
+            await self._request(
+                "POST",
+                f"/v3/documents/{document_id}/extract",
+                json={"run_with_orchestration": run_with_orchestration},
             )
+        )
+        logger.info("Graph extraction complete", document_id=document_id)
+        return results
 
-            # Ingest with R2R
-            response = self.client.documents.create(
-                file_path=str(temp_path),
-                metadata={
-                    "filename": file.filename,
-                    "content_type": file.content_type,
-                    "source": "web_upload",
-                    **(metadata or {}),
-                },
-                ingestion_mode="fast",  # Use "hi-res" for better quality
-            )
+    # -- retrieval -----------------------------------------------------------
 
-            # Response contains document_id and task_id
-            result = {
-                "document_id": response["results"]["document_id"],
-                "status": "processing",
-                "task_id": response["results"].get("task_id"),
-                "filename": file.filename,
+    async def get_document_chunks(self, document_id: str, limit: int = 100) -> list[dict[str, Any]]:
+        payload = await self._request(
+            "GET", f"/v3/documents/{document_id}/chunks", params={"limit": limit}
+        )
+        return self._results(payload) or []
+
+    async def get_document_entities(
+        self, document_id: str, limit: int = 100
+    ) -> dict[str, Any]:
+        payload = await self._request(
+            "GET", f"/v3/documents/{document_id}/entities", params={"limit": limit}
+        )
+        entities = self._results(payload) or []
+        grouped: dict[str, list[dict[str, Any]]] = {t: [] for t in self.ENTITY_TYPES}
+        flat = []
+        for ent in entities:
+            item = {
+                "name": ent.get("name"),
+                "category": ent.get("category"),
+                "description": ent.get("description"),
             }
+            flat.append(item)
+            cat = ent.get("category")
+            if cat in grouped:
+                grouped[cat].append(item)
+        return {
+            "document_id": document_id,
+            "entities": flat,
+            "grouped": grouped,
+            "total_count": len(flat),
+        }
 
-            logger.info(
-                "Document ingestion initiated",
-                document_id=result["document_id"],
-                task_id=result.get("task_id"),
-            )
+    async def get_document_relationships(
+        self, document_id: str, limit: int = 100
+    ) -> list[dict[str, Any]]:
+        payload = await self._request(
+            "GET", f"/v3/documents/{document_id}/relationships", params={"limit": limit}
+        )
+        return self._results(payload) or []
 
-            return result
+    async def get_document_status(self, document_id: str) -> dict[str, Any]:
+        results = self._results(await self._request("GET", f"/v3/documents/{document_id}"))
+        return {
+            "document_id": document_id,
+            "status": results.get("ingestion_status") or results.get("status", "unknown"),
+            "extraction_status": results.get("extraction_status"),
+            "metadata": results.get("metadata", {}),
+            "created_at": results.get("created_at"),
+            "updated_at": results.get("updated_at"),
+        }
 
-        except Exception as e:
-            logger.error(f"Ingestion failed: {e}", filename=file.filename)
-            if isinstance(e, ValueError):
-                raise
-            raise R2RIngestionError(f"Document ingestion failed: {str(e)}") from e
-        finally:
-            # Clean up temp file
-            if temp_path and temp_path.exists():
-                try:
-                    os.remove(temp_path)
-                except Exception as e:
-                    logger.warning(f"Failed to remove temp file: {e}")
+    async def list_documents(self, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
+        payload = await self._request(
+            "GET", "/v3/documents", params={"limit": limit, "offset": offset}
+        )
+        docs = self._results(payload) or []
+        return [
+            {
+                "document_id": d.get("id"),
+                "title": d.get("title"),
+                "ingestion_status": d.get("ingestion_status"),
+                "extraction_status": d.get("extraction_status"),
+                "created_at": d.get("created_at"),
+                "metadata": d.get("metadata", {}),
+            }
+            for d in docs
+        ]
+
+    async def delete_document(self, document_id: str) -> bool:
+        try:
+            await self._request("DELETE", f"/v3/documents/{document_id}")
+            logger.info("Document deleted", document_id=document_id)
+            return True
+        except R2RServiceError as e:
+            logger.error("Failed to delete document", error=str(e), document_id=document_id)
+            return False
 
     async def hybrid_search(
         self, query: str, filters: dict[str, Any] | None = None, limit: int = 20
     ) -> dict[str, Any]:
-        """
-        Perform hybrid vector + keyword search.
-
-        Args:
-            query: The search query
-            filters: Optional filters to apply
-            limit: Maximum number of results
-
-        Returns:
-            Search results with relevance scores
-        """
-        try:
-            logger.info(
-                "Performing hybrid search",
-                query=query[:100],
-                has_filters=bool(filters),
-                limit=limit,
-            )
-
-            response = self.client.retrieval.search(
-                query=query,
-                search_settings={
-                    "use_hybrid_search": True,
-                    "use_semantic_search": True,
-                    "filters": filters or {},
-                    "limit": limit,
-                    "search_mode": "advanced",
-                },
-            )
-
-            results = response.get("results", [])
-
-            logger.info(
-                "Hybrid search completed",
-                query=query[:50],
-                results_count=len(results),
-            )
-
-            return {"results": results, "total": len(results), "query": query}
-
-        except Exception as e:
-            logger.error("Hybrid search failed", error=str(e), query=query[:100])
-            raise R2RServiceError(f"Search failed: {str(e)}") from e
+        """Hybrid (vector + full-text) search over ingested chunks."""
+        body = {
+            "query": query,
+            "search_settings": {
+                "use_hybrid_search": True,
+                "use_semantic_search": True,
+                "filters": filters or {},
+                "limit": limit,
+            },
+        }
+        results = self._results(await self._request("POST", "/v3/retrieval/search", json=body))
+        chunks = (results or {}).get("chunk_search_results", []) if isinstance(results, dict) else []
+        return {"results": chunks, "total": len(chunks), "query": query}
 
     async def rag_query(
-        self,
-        query: str,
-        use_graph: bool = True,
-        filters: dict[str, Any] | None = None,
-    ) -> str:
-        """
-        Perform RAG query without streaming.
-
-        Args:
-            query: The query to answer
-            use_graph: Whether to use graph search
-            filters: Optional document filters
-
-        Returns:
-            Generated response
-        """
-        try:
-            logger.info(
-                "Executing RAG query",
-                query=query[:100],
-                use_graph=use_graph,
-            )
-
-            response = self.client.retrieval.rag(
-                query=query,
-                search_settings={
-                    "use_hybrid_search": True,
-                    "filters": filters or {},
-                    "graph_search_settings": {
-                        "enabled": use_graph,
-                        "include_communities": True,
-                    } if use_graph else None,
-                },
-                rag_generation_config={
-                    "model": "anthropic/claude-3-haiku-20240307",
-                    "stream": False,
-                    "temperature": 0.7,
-                    "max_tokens": 2000,
-                },
-            )
-
-            answer = response.get("results", {}).get("completion", {}).get("choices", [{}])[0].get("message", {}).get("content", "")
-
-            logger.info(
-                "RAG query completed",
-                query=query[:50],
-                answer_length=len(answer),
-            )
-
-            return answer
-
-        except Exception as e:
-            logger.error("RAG query failed", error=str(e), query=query[:100])
-            raise R2RServiceError(f"RAG query failed: {str(e)}") from e
-
-    async def rag_query_stream(
         self, query: str, use_graph: bool = True, filters: dict[str, Any] | None = None
-    ) -> AsyncGenerator[str]:
-        """
-        Stream RAG responses.
+    ) -> str:
+        """RAG answer grounded in ingested memories (generation on Gemini, server-side)."""
+        body = {
+            "query": query,
+            "search_settings": {
+                "use_hybrid_search": True,
+                "filters": filters or {},
+                "graph_search_settings": {"enabled": use_graph},
+            },
+        }
+        results = self._results(await self._request("POST", "/v3/retrieval/rag", json=body))
+        if isinstance(results, dict):
+            # R2R returns either a generated_answer or an OpenAI-style completion.
+            if results.get("generated_answer"):
+                return results["generated_answer"]
+            completion = results.get("completion", {})
+            choices = completion.get("choices") if isinstance(completion, dict) else None
+            if choices:
+                return choices[0].get("message", {}).get("content", "")
+        return ""
 
-        Args:
-            query: The query to answer
-            use_graph: Whether to use graph search
-            filters: Optional document filters
-
-        Yields:
-            Response chunks as they arrive
-        """
-        try:
-            logger.info(
-                "Starting RAG stream",
-                query=query[:100],
-                use_graph=use_graph,
-            )
-
-            response = self.client.retrieval.rag(
-                query=query,
-                search_settings={
-                    "use_hybrid_search": True,
-                    "filters": filters or {},
-                    "graph_search_settings": {
-                        "enabled": use_graph,
-                        "include_communities": True,
-                    } if use_graph else None,
-                },
-                rag_generation_config={
-                    "model": "anthropic/claude-3-haiku-20240307",
-                    "stream": True,
-                    "temperature": 0.7,
-                    "max_tokens": 2000,
-                },
-            )
-
-            # Stream processing
-            for chunk in response:
-                if chunk and isinstance(chunk, dict):
-                    # Extract content from chunk
-                    if "choices" in chunk:
-                        for choice in chunk["choices"]:
-                            delta = choice.get("delta", {})
-                            content = delta.get("content", "")
-                            if content:
-                                yield content
-                    elif "content" in chunk:
-                        yield chunk["content"]
-
-            logger.info("RAG stream completed")
-
-        except Exception as e:
-            logger.error("RAG stream failed", error=str(e))
-            raise R2RServiceError(f"Stream failed: {str(e)}") from e
-
-    async def get_document_entities(self, document_id: str) -> dict[str, Any]:
-        """
-        Get entities extracted from document.
-
-        Args:
-            document_id: The document ID
-
-        Returns:
-            Extracted entities grouped by type
-        """
-        try:
-            # R2R auto-extracts during ingestion
-            entities = self.client.documents.list_entities(document_id)
-
-            # Group entities by type
-            grouped = {entity_type: [] for entity_type in self.ENTITY_TYPES}
-
-            for entity in entities.get("results", []):
-                entity_type = entity.get("type", "Unknown")
-                if entity_type in grouped:
-                    grouped[entity_type].append({
-                        "name": entity.get("name"),
-                        "confidence": entity.get("confidence", 0.0),
-                        "metadata": entity.get("metadata", {})
-                    })
-
-            return {
-                "document_id": document_id,
-                "entities": grouped,
-                "total_count": len(entities.get("results", []))
-            }
-
-        except Exception as e:
-            logger.error(
-                "Failed to get document entities",
-                error=str(e),
-                document_id=document_id,
-            )
-            raise R2RServiceError(f"Failed to get entities: {str(e)}") from e
-
-    async def get_document_status(self, document_id: str) -> dict[str, Any]:
-        """
-        Get the processing status of a document.
-
-        Args:
-            document_id: The document ID to check
-
-        Returns:
-            Status information including processing state
-        """
-        try:
-            response = self.client.documents.retrieve(document_id)
-
-            return {
-                "document_id": document_id,
-                "status": response.get("results", {}).get("status", "unknown"),
-                "metadata": response.get("results", {}).get("metadata", {}),
-                "created_at": response.get("results", {}).get("created_at"),
-                "updated_at": response.get("results", {}).get("updated_at"),
-            }
-
-        except Exception as e:
-            logger.error(
-                "Failed to get document status",
-                error=str(e),
-                document_id=document_id,
-            )
-            raise R2RServiceError(f"Status check failed: {str(e)}") from e
-
-    async def delete_document(self, document_id: str) -> bool:
-        """
-        Delete a document from R2R.
-
-        Args:
-            document_id: The document ID to delete
-
-        Returns:
-            True if deletion was successful
-        """
-        try:
-            self.client.documents.delete(document_id)
-            logger.info("Document deleted", document_id=document_id)
-            return True
-
-        except Exception as e:
-            logger.error(
-                "Failed to delete document",
-                error=str(e),
-                document_id=document_id,
-            )
-            return False
-
-    async def list_documents(
-        self, filters: dict[str, Any] | None = None, limit: int = 100
-    ) -> list[dict[str, Any]]:
-        """
-        List documents in the R2R system.
-
-        Args:
-            filters: Optional filters
-            limit: Maximum number of documents to return
-
-        Returns:
-            List of document metadata
-        """
-        try:
-            response = self.client.documents.list(
-                filters=filters or {},
-                limit=limit
-            )
-
-            documents = []
-            for doc in response.get("results", []):
-                documents.append({
-                    "document_id": doc.get("id"),
-                    "filename": doc.get("metadata", {}).get("filename", "Unknown"),
-                    "status": doc.get("status"),
-                    "created_at": doc.get("created_at"),
-                    "metadata": doc.get("metadata", {})
-                })
-
-            return documents
-
-        except Exception as e:
-            logger.error("Failed to list documents", error=str(e))
-            raise R2RServiceError(f"Failed to list documents: {str(e)}") from e
-
-    async def get_task_status(self, task_id: str) -> dict[str, Any]:
-        """
-        Get the status of an ingestion task.
-
-        Args:
-            task_id: The task ID to check
-
-        Returns:
-            Task status information
-        """
-        try:
-            response = await self._httpx.get(f"{self.base_url}/tasks/{task_id}")
-
-            if response.status_code == 200:
-                return response.json()
-            else:
-                return {
-                    "task_id": task_id,
-                    "status": "unknown",
-                    "error": f"Status check returned {response.status_code}"
-                }
-
-        except Exception as e:
-            logger.error("Failed to get task status", error=str(e), task_id=task_id)
-            return {
-                "task_id": task_id,
-                "status": "error",
-                "error": str(e)
-            }
+    # -- lifecycle -----------------------------------------------------------
 
     async def cleanup(self):
-        """Clean up resources."""
-        if self._httpx:
-            await self._httpx.aclose()
+        await self._http.aclose()
         logger.info("R2R service cleaned up")
 
     async def __aenter__(self):
-        """Async context manager entry."""
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit."""
         await self.cleanup()

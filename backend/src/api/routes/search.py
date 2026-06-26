@@ -10,9 +10,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional, Dict, Any, List
 import structlog
 
-# r2r disabled for lean deploy:
-# from ...services import R2RService
-from ...services import Neo4jService, VectorService
+from ...services import R2RService, Neo4jService, VectorService
 from ...models.entities import EntitySearchRequest
 
 logger = structlog.get_logger(__name__)
@@ -20,10 +18,9 @@ logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/search", tags=["search"])
 
 
-# r2r disabled for lean deploy:
-# async def get_r2r_service():
-#     async with R2RService() as service:
-#         yield service
+async def get_r2r_service():
+    async with R2RService() as service:
+        yield service
 
 
 async def get_neo4j_service():
@@ -99,21 +96,17 @@ async def hybrid_search(
     include_graph: bool = True,
     include_documents: bool = True,
     entity_types: Optional[List[str]] = None,
-    # r2r disabled for lean deploy:
-    # r2r_service: R2RService = Depends(get_r2r_service),
+    r2r_service: R2RService = Depends(get_r2r_service),
     neo4j_service: Neo4jService = Depends(get_neo4j_service)
 ):
     """
-    Hybrid search across documents and graph.
-
-    NOTE: document (r2r) results are disabled for the lean deploy; only graph
-    results are returned regardless of `include_documents`.
+    Hybrid search across ingested documents (R2R/Gemini) and the graph.
 
     Args:
         query: Search query
         limit: Maximum results per source
         include_graph: Include graph search
-        include_documents: Include document search (disabled; r2r removed)
+        include_documents: Include R2R document (vector + full-text) search
         entity_types: Filter entity types
 
     Returns:
@@ -125,18 +118,13 @@ async def hybrid_search(
             "sources": []
         }
 
-        # r2r disabled for lean deploy: document search source removed.
-        # if include_documents:
-        #     doc_results = await r2r_service.search(
-        #         query=query,
-        #         search_type="hybrid",
-        #         limit=limit
-        #     )
-        #     results["sources"].append({
-        #         "type": "documents",
-        #         "count": len(doc_results),
-        #         "results": doc_results
-        #     })
+        if include_documents:
+            doc_results = await r2r_service.hybrid_search(query=query, limit=limit)
+            results["sources"].append({
+                "type": "documents",
+                "count": doc_results["total"],
+                "results": doc_results["results"]
+            })
 
         if include_graph:
             from ...models.entities import EntityFilter

@@ -1,40 +1,42 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { geminiService } from '@/lib/gemini';
+
+// The Gemini chat call now lives on the FastAPI backend. This route is a thin
+// server-side proxy so the browser never needs the backend URL or any API key.
+// Note: no trailing slash, must include the /api/v1 prefix.
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('Chat API called');
     const body = await request.json();
-    console.log('Request body:', body);
-    
     const { message, graphData, chatHistory } = body;
 
     if (!message || typeof message !== 'string') {
-      console.log('Invalid message:', message);
-      return NextResponse.json(
-        { error: 'Message is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Message is required' }, { status: 400 });
     }
 
-    console.log('Calling Gemini service with :', { message, graphData, chatHistory });
-    
-    // Get response from Gemini with full context
-    const response = await geminiService.chatWithContext(message, graphData, chatHistory);
-    
-    console.log('Gemini response received:', response.substring(0, 100) + '...');
-    
-    return NextResponse.json({
-      success: true,
-      response,
-      timestamp: new Date().toISOString()
+    const response = await fetch(`${API_BASE}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message, graphData, chatHistory }),
     });
 
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      // Surface the backend's user-facing message (quota/billing/overload, etc.)
+      const detail = data?.detail || 'Failed to process chat message';
+      return NextResponse.json({ error: detail }, { status: response.status });
+    }
+
+    // Backend already returns { success, response, timestamp }.
+    return NextResponse.json(data);
   } catch (error) {
-    console.error('Error processing chat message:', error);
-    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
+    console.error('Error proxying chat message to backend:', error);
     return NextResponse.json(
-      { error: 'Failed to process chat message', details: error instanceof Error ? error.message : 'Unknown error' },
+      {
+        error: 'Failed to process chat message',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
       { status: 500 }
     );
   }

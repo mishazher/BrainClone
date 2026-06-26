@@ -1,0 +1,96 @@
+# R2R configuration for BrainClone — Gemini-only (via LiteLLM).
+#
+# Targets R2R v3.6.6 (image: sciphiai/r2r). Config format is TOML.
+# Both completion/KG-extraction AND embeddings run on Google Gemini using a
+# single GEMINI_API_KEY. Verified model names for the bundled litellm (1.75.8):
+#   - completion: gemini/gemini-2.5-flash (quality), gemini/gemini-2.5-flash-lite (fast)
+#   - embedding:  gemini/gemini-embedding-001 truncated to 768 dims
+#     (gemini/text-embedding-004 404s in this litellm build; gemini-embedding-001
+#      is natively 3072 — truncated to 768 to stay under pgvector's ivfflat
+#      2000-dim index cap. R2R passes base_dimension through as the `dimensions` kwarg.)
+
+[app]
+project_name = "brainclone"
+# LLM for internal ops (conversation names, etc.)
+fast_llm = "gemini/gemini-2.5-flash-lite"
+# LLM for user-facing output (RAG replies) and KG extraction
+quality_llm = "gemini/gemini-2.5-flash"
+# LLM for visual inputs
+vlm = "gemini/gemini-2.5-flash"
+# Transcription — Gemini (audio ingestion is not used by BrainClone)
+audio_lm = "gemini/gemini-2.5-flash-lite"
+
+[auth]
+provider = "r2r"
+# Local/dev: no auth wall so the backend R2RService client can call freely.
+# For production, set require_authentication = true and issue tokens.
+require_authentication = false
+require_email_verification = false
+default_admin_email = "admin@brainclone.local"
+default_admin_password = "change_me_immediately"
+
+[completion]
+provider = "litellm"
+concurrent_request_limit = 16
+request_timeout = 60
+
+  [completion.generation_config]
+  temperature = 0.1
+  top_p = 1
+  max_tokens_to_sample = 4_096
+  stream = false
+  add_generation_kwargs = { }
+
+[crypto]
+provider = "bcrypt"
+
+[file]
+provider = "postgres"
+
+[database]
+default_collection_name = "Default"
+default_collection_description = "Your default collection."
+collection_summary_prompt = "collection_summary"
+
+  [database.graph_creation_settings]
+    graph_entity_description_prompt = "graph_entity_description"
+    graph_extraction_prompt = "graph_extraction"
+    entity_types = []        # empty = extract all entity types
+    relation_types = []      # empty = extract all relation types
+    automatic_deduplication = true
+
+  [database.graph_enrichment_settings]
+    graph_communities_prompt = "graph_communities"
+
+[embedding]
+provider = "litellm"
+base_model = "gemini/gemini-embedding-001"
+base_dimension = 768
+batch_size = 128
+concurrent_request_limit = 16
+initial_backoff = 1.0
+quantization_settings = { quantization_type = "FP32" }
+
+[completion_embedding]
+provider = "litellm"
+base_model = "gemini/gemini-embedding-001"
+base_dimension = 768
+batch_size = 128
+concurrent_request_limit = 16
+
+[ingestion]
+provider = "r2r"
+chunking_strategy = "recursive"
+chunk_size = 1_024
+chunk_overlap = 512
+excluded_parsers = []
+automatic_extraction = true   # auto-extract entities/relations into the graph on ingest
+
+[orchestration]
+provider = "simple"           # avoids the external Hatchet dependency
+
+[email]
+provider = "console_mock"
+
+[scheduler]
+provider = "apscheduler"

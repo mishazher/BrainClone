@@ -17,7 +17,7 @@ Bring your memories back to life. Transform journal entries, photos, and documen
 | Layer | Technologies |
 |---|---|
 | **Frontend** | Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS 3, `react-force-graph-3d`, Three.js, Zustand, Axios, Zod, Lucide icons |
-| **AI** | Google Gemini 2.5 Flash (`@google/generative-ai`) — called from Next.js API routes (server-side) |
+| **AI** | Google Gemini 2.5 Flash — frontend journaling/chat (`@google/generative-ai`, Next.js API routes) **and** R2R document embeddings + KG extraction (via LiteLLM, server-side). Single `GEMINI_API_KEY`. |
 | **Backend API** | FastAPI (Python 3.13), Uvicorn, structlog, Pydantic Settings |
 | **Graph DB** | Neo4j 5.x (Aura cloud or self-hosted) via the official `neo4j` Python driver |
 | **Vector DB** | PostgreSQL 16 + pgvector (via `asyncpg`) — embeddings & similarity search |
@@ -43,7 +43,7 @@ graph TB
 1. The browser loads the Next.js SPA on port `3000`.
 2. Graph data is fetched via `GET /api/graph` — a **Next.js server-side API route** that proxies a Cypher query (`POST /api/v1/graph/cypher`) to the FastAPI backend, transforms the raw Neo4j records into `{ nodes, links }`, and returns them. This avoids CORS and keeps the backend URL server-side.
 3. **Journaling**: the user writes a memory → `POST /api/journal` → Next.js API route calls Gemini to extract entities → the frontend merges extracted nodes/links into the graph store.
-4. **Chat**: the user asks a question → `POST /api/chat` → Next.js API route sends the question + graph context to Gemini → returns the AI response.
+4. **Chat**: the user asks a question → `POST /api/chat` (Next.js) **proxies to** `POST /api/v1/chat` on the FastAPI backend → the backend calls Gemini with the graph context server-side → returns the AI response. The Gemini key for chat lives only on the backend.
 5. The FastAPI backend exposes graph CRUD, search, traversal, visualization, and raw Cypher endpoints under `/api/v1/graph/*` and `/api/v1/search/*`.
 
 ## Monorepo Layout
@@ -58,7 +58,7 @@ Brain-clone-divhacks/
 │   │   └── api/
 │   │       ├── graph/route.ts    Proxies Cypher queries to FastAPI, transforms results
 │   │       ├── journal/route.ts  Calls Gemini for entity extraction
-│   │       └── chat/route.ts     Calls Gemini for conversational responses
+│   │       └── chat/route.ts     Proxies chat to the FastAPI backend (/api/v1/chat)
 │   ├── components/
 │   │   └── Graph3D.tsx           3D force-directed graph (Three.js, bloom, hover effects)
 │   ├── lib/
@@ -76,11 +76,13 @@ Brain-clone-divhacks/
 │   │   ├── api/routes/
 │   │   │   ├── graph.py          Entity CRUD, relationships, traversal, Cypher
 │   │   │   ├── search.py         Document, semantic, hybrid, contextual search
-│   │   │   └── documents.py      Document upload/processing (R2R — currently disabled)
+│   │   │   ├── documents.py      Document upload/processing via R2R (Gemini)
+│   │   │   └── chat.py           Chatbot — Gemini response with graph context
 │   │   ├── services/
 │   │   │   ├── neo4j_service.py  Neo4j graph operations
 │   │   │   ├── vector_service.py pgvector embedding operations
-│   │   │   ├── r2r_service.py    R2R integration (currently disabled)
+│   │   │   ├── r2r_service.py    R2R REST client (httpx) — ingest, extract, search, RAG
+│   │   │   ├── gemini_service.py Server-side Gemini chat (graph-context responses)
 │   │   │   └── mock_data.py      Sample memory data for demo mode
 │   │   ├── models/
 │   │   │   ├── entities.py       Entity, Person, Event, Location models
@@ -97,7 +99,7 @@ Brain-clone-divhacks/
 │   └── DEPLOY.md                 Google Cloud Run deployment guide
 │
 ├── r2r-config/
-│   └── config.yaml               R2R service config (Anthropic completion, OpenAI embeddings)
+│   └── config.toml               R2R server config (Gemini completion + embeddings via LiteLLM)
 │
 ├── example/
 │   ├── datasets/                 Sample graph datasets (JSON, CSV)
@@ -115,7 +117,9 @@ Brain-clone-divhacks/
 
 ## Current State
 
-> **Demo / Neo4j-only mode.** The R2R document-processing pipeline and the `documents` API router are disabled in `main.py` for lean deployment. The backend starts a `MockDataService` to provide sample graph data when external databases are unreachable. Gemini-powered journaling and chat work independently via the frontend's Next.js API routes.
+> **R2R document-RAG is live and Gemini-only.** The R2R pipeline and the `documents` API router are re-enabled in `main.py`. Document upload → chunking → **Gemini embeddings** (`gemini-embedding-001` @ 768 dims) into pgvector → **Gemini KG extraction** (`gemini-2.5-flash`) of entities & relationships — all via a single `GEMINI_API_KEY`, routed through LiteLLM inside the R2R server (`sciphiai/r2r` v3.6.6). The backend talks to R2R as a plain REST client (no R2R SDK dependency). The `MockDataService` still provides sample graph data when Neo4j is unreachable, and Gemini-powered journaling/chat continue to work via the frontend's Next.js API routes.
+>
+> Local infra: a `pgvector/pgvector:pg16` container (host port `5433`) and the R2R server (host port `7272` → container `8000`). In production the Postgres layer is **Supabase**.
 
 ## Getting Started
 
@@ -193,6 +197,7 @@ Open [http://localhost:3000](http://localhost:3000) to see the 3D graph. Backend
 | `POST` | `/api/v1/graph/visualize` | Graph data for visualization |
 | `POST` | `/api/v1/graph/cypher` | Execute raw Cypher query |
 | `POST` | `/api/v1/search/hybrid` | Hybrid search across documents & graph |
+| `POST` | `/api/v1/chat` | Chatbot — Gemini response with knowledge-graph context (server-side) |
 
 ### Frontend (Next.js API Routes — port 3000)
 
@@ -200,7 +205,7 @@ Open [http://localhost:3000](http://localhost:3000) to see the 3D graph. Backend
 |--------|------|-------------|
 | `GET` | `/api/graph` | Proxy Cypher query to backend, transform into `{ nodes, links }` |
 | `POST` | `/api/journal` | Analyze journal text via Gemini, extract entities |
-| `POST` | `/api/chat` | Chat with Gemini using graph context |
+| `POST` | `/api/chat` | Proxy to backend `/api/v1/chat` (Gemini chat runs server-side) |
 
 ## Deployment
 
