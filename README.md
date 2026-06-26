@@ -53,7 +53,7 @@ Brain-clone-divhacks/
 ├── frontend/                     Next.js app (TypeScript)
 │   ├── app/
 │   │   ├── page.tsx              Main page — splash screen, 3D graph, journaling, chat
-│   │   ├── layout.tsx            Root layout (Geist font, metadata)
+│   │   ├── layout.tsx            Root layout  (Geist font, metadata)
 │   │   ├── globals.css           Tailwind + custom animations
 │   │   └── api/
 │   │       ├── graph/route.ts    Proxies Cypher queries to FastAPI, transforms results
