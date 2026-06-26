@@ -18,7 +18,7 @@ Bring your memories back to life. Transform journal entries, photos, and documen
 |---|---|
 | **Frontend** | Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS 3, `react-force-graph-3d`, Three.js, Zustand, Axios, Zod, Lucide icons |
 | **AI** | Google Gemini 2.5 Flash — frontend journaling/chat (`@google/generative-ai`, Next.js API routes) **and** R2R document embeddings + KG extraction (via LiteLLM, server-side). Single `GEMINI_API_KEY`. |
-| **Backend API** | FastAPI (Python 3.13), Uvicorn, structlog, Pydantic Settings |
+| **Backend API** | FastAPI (Python 3.13), Uvicorn, structlog, Pydantic Settings  |
 | **Graph DB** | Neo4j 5.x (Aura cloud or self-hosted) via the official `neo4j` Python driver |
 | **Vector DB** | PostgreSQL 16 + pgvector (via `asyncpg`) —  embeddings & similarity search |
 | **Caching** | Redis (optional) |
