@@ -22,7 +22,7 @@ Bring your memories back to life. Transform journal entries, photos, and documen
 | **Graph DB** | Neo4j 5.x (Aura cloud or self-hosted) via the official `neo4j` Python driver |
 | **Vector DB** | PostgreSQL 16 + pgvector (via `asyncpg`) —  embeddings & similarity search |
 | **Caching** | Redis (optional) |
-| **Package Mgmt** | npm workspaces (root), pnpm (frontend), uv / pip (backend) |
+| **Package Mgmt** | npm workspaces (root), pnpm (frontend), uv /  pip (backend) |
 
 ## Architecture
 
