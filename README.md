@@ -43,7 +43,7 @@ graph TB
 1. The browser loads the Next.js SPA on port `3000`.
 2. Graph data is fetched via `GET /api/graph` — a **Next.js server-side API route** that proxies a Cypher query (`POST /api/v1/graph/cypher`) to the FastAPI backend, transforms the raw Neo4j records into `{ nodes, links }`, and returns them. This avoids CORS and keeps the backend URL server-side.
 3. **Journaling**: the user writes a memory → `POST /api/journal` →  Next.js API route calls Gemini to extract entities → the frontend merges extracted nodes/links into the graph store.
-4. **Chat**: the user asks a question → `POST /api/chat` (Next.js) **proxies to** `POST /api/v1/chat` on the FastAPI backend → the backend calls Gemini with the graph context server-side → returns the AI response. The Gemini key for chat lives only on the backend.
+4. **Chat**: the user asks a question → `POST /api/chat` (Next.js) **proxies to** `POST /api/v1/chat` on the FastAPI backend → the  backend calls Gemini with the graph context server-side → returns the AI response. The Gemini key for chat lives only on the backend.
 5. The FastAPI backend exposes graph CRUD, search, traversal, visualization, and raw Cypher endpoints under `/api/v1/graph/*` and `/api/v1/search/*`.
 
 ## Monorepo Layout
