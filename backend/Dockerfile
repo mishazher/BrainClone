@@ -1,4 +1,4 @@
-# Unified image for the BrainClone backend (FastAPI) and R2R sidecar.
+# Unified image for the BrainClone backend (FastAPI) and R2R, run together by start.sh.
 # Built for Cloud Run (injects $PORT, default 8080); also runs locally.
 # Note: Build context should be the repository root:
 #   docker build -f backend/Dockerfile .

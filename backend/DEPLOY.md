@@ -1,6 +1,6 @@
 # Deploying BrainClone (backend + R2R) to Google Cloud Run
 
-This deploys **both the FastAPI app and the R2R sidecar in a single Cloud Run container**.
+This deploys **both the FastAPI app and the R2R server in a single Cloud Run container**.
 
 The container runs a start script (`start.sh`) that boots both services. They share a network namespace, so the backend talks to R2R over **`localhost:7272`** — the exact `R2R_BASE_URL` default the code already uses.
 R2R is never exposed publicly. All durable state lives in **Neo4j Aura** and **Supabase** (Postgres + pgvector); the container itself is stateless.
@@ -13,14 +13,14 @@ R2R is never exposed publicly. All durable state lives in **Neo4j Aura** and **S
                   Neo4j Aura                    Supabase (Postgres + pgvector)
 ```
 
-> **Why a custom image?** Cloud Run allows multi-container deployments, but a unified image simplifies the `gcloud run deploy` command and lifecycle management. We build a unified image, push to Artifact Registry, and apply a service YAML (`deploy/cloudrun/service.yaml`).
+> **Why a unified image?** Cloud Run also supports multi-container (sidecar) deployments, but a unified image keeps it to one image and one `gcloud run deploy` command — no service YAML to maintain.
 
 ---
 
 ## One-time setup
 
 1. **GCP project + billing.** Free tier covers a low-traffic demo, but see the
-   cost note below — a warm R2R sidecar is **not** free. New accounts get $300/90 days.
+   cost note below — keeping R2R warm is **not** free. New accounts get $300/90 days.
 
 2. **Authenticate** (interactive — run inline with the `!` prefix in Claude Code):
    ```bash
@@ -74,9 +74,9 @@ for S in neo4j-password gemini-api-key supabase-db-password; do
 done
 ```
 
-## Step 3 — Fill in & apply the service spec
+## Step 3 — Deploy the service
 
-Edit `deploy/cloudrun/service.yaml` and replace the placeholders:
+Replace the placeholders:
 
 | Placeholder | Value |
 |---|---|
@@ -86,12 +86,41 @@ Edit `deploy/cloudrun/service.yaml` and replace the placeholders:
 | `<project-ref>` | Supabase project ref → user `postgres.<project-ref>` |
 | `brainclone.work` | your frontend origin(s) for CORS |
 
-Then apply and open it up:
+Then deploy (the `^@^` prefix switches the env-var delimiter to `@`, since
+`CORS_ORIGINS` contains commas):
 ```bash
-gcloud run services replace deploy/cloudrun/service.yaml --region REGION
-gcloud run services add-iam-policy-binding brainclone --region REGION \
-  --member=allUsers --role=roles/run.invoker
+gcloud run deploy brainclone \
+  --image REGION-docker.pkg.dev/PROJECT_ID/brainclone/backend:latest \
+  --region REGION --allow-unauthenticated \
+  --port 8080 --concurrency 40 --timeout 300 \
+  --cpu 2 --memory 4Gi --min-instances 1 --max-instances 2 \
+  --no-cpu-throttling --cpu-boost \
+  --set-env-vars "^@^ENVIRONMENT=production\
+@LOG_FORMAT=json\
+@CORS_ORIGINS=https://brainclone.work,http://localhost:3000\
+@R2R_BASE_URL=http://localhost:7272\
+@R2R_PROJECT_NAME=brainclone\
+@NEO4J_URI=neo4j+s://<neo4j-id>.databases.neo4j.io\
+@NEO4J_USER=neo4j\
+@NEO4J_DATABASE=neo4j\
+@POSTGRES_HOST=<supabase-region>.pooler.supabase.com\
+@POSTGRES_PORT=5432\
+@POSTGRES_USER=postgres.<project-ref>\
+@POSTGRES_DB=postgres\
+@R2R_POSTGRES_HOST=<supabase-region>.pooler.supabase.com\
+@R2R_POSTGRES_PORT=5432\
+@R2R_POSTGRES_USER=postgres.<project-ref>\
+@R2R_POSTGRES_DBNAME=postgres" \
+  --set-secrets "NEO4J_PASSWORD=neo4j-password:latest,\
+GEMINI_API_KEY=gemini-api-key:latest,\
+POSTGRES_PASSWORD=supabase-db-password:latest,\
+R2R_POSTGRES_PASSWORD=supabase-db-password:latest"
 ```
+
+Notes on the flags:
+- **`--min-instances 1`** keeps R2R warm (it boots in 30–60s; a cold start per request would time out).
+- **`--no-cpu-throttling`** keeps the R2R background process alive between requests.
+- **R2R's own tables** live in the same Supabase DB, namespaced by `R2R_PROJECT_NAME` (schema `brainclone`). Session pooler (5432) is required — R2R runs DDL/migrations that the transaction pooler (6543) can break.
 
 ### Verify
 ```bash
@@ -123,24 +152,25 @@ exists vector;`.
 
 R2R is heavy (~2 GB RAM, multi-GB image, 30–60s boot), so:
 
-- **`minScale: 1`** (in the YAML) keeps R2R warm — this **leaves Always Free** and
+- **`--min-instances 1`** keeps R2R warm — this **leaves Always Free** and
   bills idle CPU/memory (a few $/month). Without it, every cold request waits the
   full R2R boot (likely timeouts) — bad UX but ~free at idle.
-- The instance memory is the **sum** of both containers (here ~5 GiB). Tune the
-  `resources.limits` down if you can; raise `maxScale` only as traffic needs.
-- `cpu-throttling: false` is required so the sidecar keeps running between requests.
+- The instance memory covers **both processes** (FastAPI + R2R, here 4 GiB). Tune
+  `--cpu`/`--memory` down if you can; raise `--max-instances` only as traffic needs.
+- `--no-cpu-throttling` is required so R2R keeps running between requests.
 
 ## Neo4j credentials
 
 Neo4j Aura's username and database are normally both `neo4j` (the instance id,
 e.g. `1b21c8b6`, is **not** the username/database). Your local `.env` currently
-sets `NEO4J_USER`/`NEO4J_DATABASE` to the instance id — fix those in the YAML or
-the connection will fail. The spec uses the typical `neo4j` values.
+sets `NEO4J_USER`/`NEO4J_DATABASE` to the instance id — don't copy those into the
+deploy command or the connection will fail. Use the typical `neo4j` values.
 
 ## Security note
 
-The R2R sidecar has no `ports:` block, so it is unreachable from the internet —
-only the backend can hit it over loopback. R2R auth is off in `config.toml`, which
+Cloud Run only routes traffic to `$PORT` (8080, the backend), so R2R on 7272 is
+unreachable from the internet — only the backend can hit it over loopback. R2R
+auth is off in `config.toml`, which
 is acceptable here. For defense-in-depth you can still enable R2R auth
 (`require_authentication = true`) and pass a token via `R2R_API_KEY` to the backend.
 
