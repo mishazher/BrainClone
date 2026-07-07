@@ -28,3 +28,6 @@ steps:
 timeout: 1800s
 options:
   dynamicSubstitutions: true
+  # Required because the build runs as a user-specified service account
+  # (the compute default SA) — logs must go to Cloud Logging or a named bucket.
+  logging: CLOUD_LOGGING_ONLY
