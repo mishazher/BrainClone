@@ -1,0 +1,30 @@
+# Build the unified backend+R2R image and deploy it to Cloud Run.
+#
+# Context must be the REPO ROOT — the Dockerfile COPYs both backend/ and
+# r2r-config/. Used two ways:
+#   - manually:   gcloud builds submit --config cloudbuild.yaml --substitutions _REGION=us-central1
+#   - CD trigger: Cloud Build GitHub trigger, type "Cloud Build configuration
+#     file", path /cloudbuild.yaml (set _REGION in the trigger if not default).
+#
+# The deploy step only swaps the image; env vars/secrets already set on the
+# service (see backend/DEPLOY.md Step 3) are preserved.
+substitutions:
+  _REGION: us-central1
+  _SERVICE: brainclone
+  _IMAGE: ${_REGION}-docker.pkg.dev/${PROJECT_ID}/brainclone/backend:latest
+steps:
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args: [build, -f, backend/Dockerfile, -t, '${_IMAGE}', .]
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args: [push, '${_IMAGE}']
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args: [run, deploy, '${_SERVICE}', --image, '${_IMAGE}', --region, '${_REGION}']
+# The image bundles FastAPI deps + R2R — the default 10-minute build timeout
+# is too tight.
+timeout: 1800s
+options:
+  dynamicSubstitutions: true

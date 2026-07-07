@@ -45,17 +45,29 @@ R2R is never exposed publicly. All durable state lives in **Neo4j Aura** and **S
 
 ## Step 1 — Build & push the unified image
 
-Run from the **repo root**. Replace `PROJECT_ID` / `REGION` (e.g. `us-central1`).
+Run from the **repo root** — the build context must be the repository root (not
+`backend/`), because the Dockerfile COPYs both `backend/` and `r2r-config/`.
+Replace `PROJECT_ID` / `REGION` (e.g. `us-central1`).
 
+**Option A — Cloud Build** (no local Docker or multi-GB push needed):
 ```bash
-# We use the repository root as the build context to include both the backend 
-# and the r2r-config/config.toml file.
+gcloud builds submit --config cloudbuild.yaml --substitutions _REGION=REGION
+```
+> `cloudbuild.yaml` builds, pushes, **and deploys** (image swap only — env vars
+> and secrets already on the service are preserved). The Cloud Build service
+> account needs `roles/run.admin` plus `roles/iam.serviceAccountUser` on the
+> runtime service account for the deploy step.
+
+**Option B — build & push locally:**
+```bash
 docker build -f backend/Dockerfile \
   -t REGION-docker.pkg.dev/PROJECT_ID/brainclone/backend:latest .
 docker push REGION-docker.pkg.dev/PROJECT_ID/brainclone/backend:latest
 ```
 
-> The unified image contains both FastAPI dependencies and R2R. The first push is slow. (You can also build it with Cloud Build via a small `cloudbuild.yaml` if you'd rather not push locally.)
+> The unified image contains both FastAPI dependencies and R2R, so builds/pushes
+> are slow. The root `.gcloudignore` whitelists only `backend/`, `r2r-config/`,
+> and `cloudbuild.yaml` for the Cloud Build upload.
 
 ## Step 2 — Create secrets
 
