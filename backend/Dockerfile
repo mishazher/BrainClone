@@ -14,7 +14,14 @@ ENV PYTHONUNBUFFERED=1 \
     R2R_HOST=0.0.0.0 \
     R2R_PORT=7272
 
-# Install Python dependencies first for better layer caching.
+# R2R server in its own venv: r2r[core] pins asyncpg<0.30, numpy<1.29 and
+# uvicorn<0.28, which conflict with the backend's deps, so the two must not
+# share an environment. Heavy layer that rarely changes — keep it first.
+# Pinned to 3.6.6 to match the sciphiai/r2r image used in docker-compose.
+RUN python -m venv /opt/r2r \
+    && /opt/r2r/bin/pip install --no-cache-dir "r2r[core]==3.6.6"
+
+# Backend dependencies (system interpreter).
 COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
