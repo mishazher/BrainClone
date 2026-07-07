@@ -2,7 +2,8 @@
 # Built for Cloud Run (injects $PORT, default 8080); also runs locally.
 # Note: Build context should be the repository root:
 #   docker build -f backend/Dockerfile .
-FROM python:3.13-slim
+# 3.12, not newer: the r2r package requires Python >=3.10,<3.13 (as of 3.6.6).
+FROM python:3.12-slim
 
 WORKDIR /app
 
