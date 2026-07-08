@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { Play, Plus, MessageCircle, Upload, Loader2, ChevronLeft, ChevronRight, X, Sparkles } from 'lucide-react';
 import { useGraphStore } from '@/stores/graphStore';
 import { graphApi } from '@/lib/api';
+import { slimGraphForContext } from '@/lib/slimGraph';
 import DocumentUpload from '@/components/DocumentUpload';
 
 interface OverviewFact {
@@ -95,7 +96,9 @@ export default function Home() {
         },
         body: JSON.stringify({
           text: journalText,
-          graphData: graphData
+          // Slim payload: raw store nodes carry force-graph/THREE.js baggage
+          // and can exceed serverless body limits (413).
+          graphData: slimGraphForContext(graphData)
         }),
       });
 
@@ -262,7 +265,7 @@ export default function Home() {
         },
         body: JSON.stringify({
           message: userMessage,
-          graphData: graphData,
+          graphData: slimGraphForContext(graphData),
           chatHistory: newHistory
         }),
       });
@@ -327,7 +330,7 @@ export default function Home() {
       const response = await fetch('/api/overview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ graphData }),
+        body: JSON.stringify({ graphData: slimGraphForContext(graphData) }),
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) {

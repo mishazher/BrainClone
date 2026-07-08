@@ -39,7 +39,12 @@ export async function POST(request: NextRequest) {
 
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const detail = data?.detail || 'Failed to upload document';
+      let detail: string = data?.detail || data?.error || 'Failed to upload document';
+      // The backend proxies to an R2R server; when that server is down the
+      // raw httpx error leaks through — translate it for the UI.
+      if (detail.includes('All connection attempts failed')) {
+        detail = 'The document ingestion service (R2R) is currently offline. Uploads will work again once it is back up.';
+      }
       return NextResponse.json({ error: detail }, { status: response.status });
     }
 

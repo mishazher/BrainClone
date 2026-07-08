@@ -101,9 +101,11 @@ JSON only:`;
   async generateBrainOverview(graphData?: {
     nodes?: Array<{ name: string; type?: string; metadata?: Record<string, any> }>;
     links?: Array<any>;
+    linkCount?: number;
   }): Promise<BrainOverview> {
     const nodes = Array.isArray(graphData?.nodes) ? graphData!.nodes! : [];
     const links = Array.isArray(graphData?.links) ? graphData!.links! : [];
+    const linkCount = typeof graphData?.linkCount === 'number' ? graphData.linkCount : links.length;
 
     if (nodes.length === 0) {
       throw new Error('The knowledge graph is empty — add some memories first.');
@@ -131,7 +133,7 @@ JSON only:`;
 Journal entries (${journalNodes.length} shown):
 ${JSON.stringify(journalContext)}
 
-Entities in their memory graph (${entityNodes.length} of ${nodes.length} shown; ${links.length} connections total):
+Entities in their memory graph (${entityNodes.length} of ${nodes.length} shown; ${linkCount} connections total):
 ${JSON.stringify(entityContext)}
 
 Prepare a spoken-style overview of this person's journal, plus 3 to 5 interesting facts about the person (their relationships, places they frequent, notable events, patterns you notice).
