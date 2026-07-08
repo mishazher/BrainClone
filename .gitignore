@@ -9,6 +9,8 @@ uv.lock
 
 .DS_Store
 .vercel
+.idea
+.vscode
 node_modules
 
 # data
