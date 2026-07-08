@@ -93,8 +93,9 @@ Brain-clone-divhacks/
 │   ├── data/                     Sample graph data (JSON)
 │   ├── seed_neo4j.py             Seed script for populating Neo4j
 │   ├── populate_extended_neo4j.py Extended seed data
-│   ├── Dockerfile                Lean production image (Python 3.13-slim)
-│   ├── requirements.txt          Pip dependencies (for Render/lean deploys)
+│   ├── Dockerfile                Unified production image (Python 3.12-slim; FastAPI + R2R in its own venv)
+│   ├── start.sh                  Container entrypoint (boots R2R, then uvicorn)
+│   ├── requirements.txt          Pip dependencies (backend only — R2R is installed separately, see Dockerfile)
 │   ├── pyproject.toml            Full project config (uv, ruff, black, mypy, pytest)
 │   └── DEPLOY.md                 Google Cloud Run deployment guide
 │
@@ -108,9 +109,8 @@ Brain-clone-divhacks/
 │
 ├── docker-compose.production.yml Full-stack compose (Postgres, R2R, backend, nginx)
 ├── nginx.conf                    Reverse proxy config (rate limiting, CORS)
-├── render.yaml                   Render Blueprint (backend only, Neo4j-only mode)
+├── cloudbuild.yaml               Cloud Build pipeline (build → push → deploy to Cloud Run)
 ├── vercel.json                   Vercel config (frontend deployment)
-├── deploy.sh                     Multi-platform deployment script
 ├── package.json                  npm workspaces root (delegates to frontend/)
 └── .env.production.example       Template for production environment variables
 ```
@@ -212,13 +212,10 @@ Open [http://localhost:3000](http://localhost:3000) to see the 3D graph. Backend
 | Component | Platform | Config File |
 |-----------|----------|-------------|
 | Frontend | **Vercel** | `vercel.json` |
-| Backend | **Render** | `render.yaml` |
-| Backend | **Google Cloud Run** | `backend/Dockerfile` + `backend/DEPLOY.md` |
-| Backend | **Railway** | `backend/railway.json` |
-| Backend | **Fly.io** | `backend/fly.toml` |
-| Full stack | **Docker Compose** | `docker-compose.production.yml` |
+| Backend + R2R | **Google Cloud Run** | `backend/Dockerfile` + `cloudbuild.yaml` |
+| Full stack (self-hosted) | **Docker Compose** | `docker-compose.production.yml` |
 
-See [`backend/DEPLOY.md`](backend/DEPLOY.md) for step-by-step Cloud Run instructions, and [`deploy.sh`](deploy.sh) for the multi-platform deployment script.
+See [`backend/DEPLOY.md`](backend/DEPLOY.md) for step-by-step Cloud Run instructions.
 
 ## Environment Variables
 

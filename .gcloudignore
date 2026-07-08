@@ -18,11 +18,6 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 
-# Local-only / one-off scripts not needed in the image.
-backend/check_db_count.py
-backend/test_write_neo4j.py
+# Local-only seed scripts not needed in the image.
 backend/seed_neo4j.py
 backend/populate_extended_neo4j.py
-
-# Not needed in the Cloud Run image (built via Dockerfile).
-backend/Procfile

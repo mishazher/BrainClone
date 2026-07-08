@@ -1,4 +1,4 @@
-"""Data models for GraphAura."""
+"""Data models for BrainClone."""
 
 from .entities import Person, Event, Location, Entity
 from .relationships import Relationship, RelationType

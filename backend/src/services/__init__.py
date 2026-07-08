@@ -1,4 +1,4 @@
-"""Service layer for GraphAura."""
+"""Service layer for BrainClone."""
 
 from .r2r_service import R2RService
 from .neo4j_service import Neo4jService

@@ -1,9 +1,9 @@
 <!--
-Purpose: Short, actionable instructions for AI coding agents working on the GraphAura monorepo.
+Purpose: Short, actionable instructions for AI coding agents working on the BrainClone monorepo.
 Keep this file concise (20-50 lines) and reference concrete files and patterns in the repo.
 -->
 
-# Copilot / AI agent guidance for GraphAura (brainclone-frontend)
+# Copilot / AI agent guidance for BrainClone (brainclone-frontend)
 
 Quick orientation
 - Monorepo with two main parts: backend (FastAPI + Python) and frontend (Next.js + React).

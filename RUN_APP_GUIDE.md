@@ -1,183 +1,118 @@
-# 🚀 How to Run BrainClone App - Complete Guide
+# 🚀 How to Run BrainClone Locally
 
 ## 📋 Prerequisites
 
-Before running the app, make sure you have:
-- **Python 3.13** (required for backend)
-- **Node.js** (for frontend)
-- **pnpm** (package manager)
-- **Homebrew** (for installing dependencies on macOS)
+- **Python 3.12+** (backend)
+- **Node.js 18+** and **pnpm** (frontend)
+- **Docker** (optional — only for the local R2R + Postgres/pgvector stack)
 
-## 🛠️ Step-by-Step Setup
+> **No credentials? No problem.** The backend boots without any `.env` and serves
+> sample graph data in **demo mode** (`/health` shows `"mock_data": "active"`).
+> You only need the setup in step 3 for real Neo4j / document-RAG features.
 
-### 1. **Check Your Environment**
+## 🛠️ Setup
+
+### 1. Backend
+
+From the repo root:
+
 ```bash
-# Check Python version (must be 3.13)
-python3 --version
+cd backend
+python -m venv .venv
 
-# Check Node.js
-node --version
+# Activate — macOS/Linux:
+source .venv/bin/activate
+# Activate — Windows:
+.venv\Scripts\activate
 
-# Check pnpm
-pnpm --version
+pip install -r requirements.txt
 ```
 
-### 2. **Install Python 3.13 (if needed)**
+> The `r2r` package is intentionally **not** in `requirements.txt` — R2R runs as
+> a separate server (Docker locally, bundled via its own venv in the production
+> image). The backend talks to it over HTTP.
+
+### 2. Frontend
+
 ```bash
-# Install Python 3.13 using Homebrew
-brew install python@3.13
-
-# Verify installation
-/opt/homebrew/bin/python3 --version
-```
-
-### 3. **Setup Backend**
-
-#### Navigate to backend directory:
-```bash
-cd /Users/ramakant/Downloads/brainclone-frontend-main/backend
-```
-
-#### Create virtual environment:
-```bash
-/opt/homebrew/bin/python3 -m venv venv
-```
-
-#### Activate virtual environment:
-```bash
-source venv/bin/activate
-```
-
-#### Install dependencies:
-```bash
-pip install "fastapi[all]" "uvicorn[standard]" python-multipart neo4j asyncpg pgvector pydantic-settings "python-jose[cryptography]" httpx redis numpy scikit-learn tenacity structlog python-dotenv celery
-pip install r2r==3.4.1
-pip install deprecated
-```
-
-### 4. **Setup Frontend**
-
-#### Navigate to frontend directory:
-```bash
-cd /Users/ramakant/Downloads/brainclone-frontend-main/frontend
-```
-
-#### Install dependencies:
-```bash
+cd frontend
 pnpm install
 ```
 
-### 5. **Start the Services**
+### 3. Configuration (optional — skip for demo mode)
 
-#### Start Backend (Terminal 1):
-```bash
-cd /Users/ramakant/Downloads/brainclone-frontend-main/backend
-source venv/bin/activate
-python -m src.main
+Create `backend/.env`:
+
+```env
+# Neo4j Aura (username/database are literally "neo4j", NOT the instance id)
+NEO4J_URI=neo4j+s://<instance-id>.databases.neo4j.io
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=<password>
+NEO4J_DATABASE=neo4j
+
+# Gemini (powers chat, embeddings, and R2R's KG extraction)
+GEMINI_API_KEY=<key>
+
+# Local pgvector (Docker container, host port 5433)
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5433
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=<password>
+POSTGRES_DB=brainclone
+
+# R2R document-RAG server
+R2R_BASE_URL=http://localhost:7272
 ```
 
-#### Start Frontend (Terminal 2):
+Start the local infra (Postgres + R2R only — skip `backend`/`nginx`, you run
+those yourself):
+
 ```bash
-cd /Users/ramakant/Downloads/brainclone-frontend-main/frontend
+docker compose -f docker-compose.production.yml up -d postgres r2r
+```
+
+R2R takes ~30–60s to boot. Its config lives in `r2r-config/config.toml`
+(Gemini-only via LiteLLM, embeddings at 768 dims).
+
+## ▶️ Start the Services
+
+**Terminal 1 — backend** (from `backend/`, venv active):
+
+```bash
+uvicorn src.main:app --reload --port 8000
+```
+
+**Terminal 2 — frontend** (from `frontend/`):
+
+```bash
 pnpm dev
 ```
 
-## 🌐 Access Your App
+## 🌐 Access
 
-### **Frontend Application:**
-- **URL**: `http://localhost:3000` or `http://localhost:3002`
-- **What you'll see**: 3D graph visualization interface
-
-### **Backend API:**
-- **Health Check**: `http://localhost:8000/health`
-- **API Documentation**: `http://localhost:8000/docs`
-- **API Base**: `http://localhost:8000/api/v1`
-
-## 🎯 What You Can Do
-
-### **1. View the 3D Graph**
-- Open `http://localhost:3000` in your browser
-- You'll see a 3D interactive graph visualization
-- Navigate with mouse: drag to rotate, scroll to zoom
-
-### **2. Upload Documents**
-- Use the frontend interface to upload PDFs, images, or text files
-- The app will extract entities (people, places, events) automatically
-
-### **3. Create Entities Manually**
-- Use the API to create entities:
-```bash
-curl -X POST "http://localhost:8000/api/v1/graph/entities" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "John Doe",
-    "type": "person",
-    "description": "A sample person",
-    "confidence_score": 0.9
-  }'
-```
-
-### **4. Search Your Data**
-- Use hybrid search to find information across documents and graph
-- Search for people, events, locations, or any text
-
-### **5. Query the Graph**
-- Execute Cypher queries to explore relationships:
-```bash
-curl -X POST "http://localhost:8000/api/v1/graph/cypher?query=MATCH%20(n)%20RETURN%20n"
-```
+| What | URL |
+|------|-----|
+| Frontend (3D graph UI) | http://localhost:3000 |
+| Backend health check | http://localhost:8000/health |
+| Interactive API docs | http://localhost:8000/docs |
+| API base | http://localhost:8000/api/v1 |
+| R2R server (if running) | http://localhost:7272 |
 
 ## 🔧 Troubleshooting
 
-### **Backend Issues:**
-- **Port 8000 busy**: Kill existing processes: `lsof -ti:8000 | xargs kill -9`
-- **Python version error**: Make sure you're using Python 3.13
-- **Missing dependencies**: Re-run the pip install commands
+- **Port 8000 busy** — macOS/Linux: `lsof -ti:8000 | xargs kill -9`; Windows:
+  `Get-Process -Id (Get-NetTCPConnection -LocalPort 8000).OwningProcess | Stop-Process`
+- **`/health` shows `demo_mode`** — expected without `.env`; otherwise check the
+  credentials in `backend/.env` (Neo4j `USER`/`DATABASE` must be `neo4j`, not the
+  instance id).
+- **`services.r2r: "unavailable"`** — the R2R container isn't up (or still
+  booting); it's optional unless you're testing document upload/RAG.
+- **Frontend build errors** — delete `frontend/node_modules`, re-run `pnpm install`.
+- **API connection errors in the UI** — the frontend expects the backend on
+  port 8000.
 
-### **Frontend Issues:**
-- **Port 3000 busy**: The app will automatically use port 3002
-- **Build errors**: Delete `node_modules` and run `pnpm install` again
-- **API connection errors**: Make sure backend is running on port 8000
+## ☁️ Deploying instead?
 
-### **Database Issues:**
-- **Neo4j connection**: The app uses a cloud Neo4j instance (configured in .env)
-- **No data**: Upload documents or create entities manually to populate the graph
-
-## 📊 Key Features
-
-### **3D Graph Visualization**
-- Interactive 3D force-directed graph
-- Different colors for different entity types (people, events, locations)
-- Click and drag to explore relationships
-
-### **Document Processing**
-- Upload PDFs, images, text files
-- Automatic entity extraction using AI
-- Relationship detection between entities
-
-### **Search Capabilities**
-- Hybrid search across documents and graph
-- Vector similarity search
-- Graph traversal queries
-
-### **API Endpoints**
-- RESTful API for all operations
-- Interactive documentation at `/docs`
-- Real-time graph updates
-
-## 🎉 You're Ready!
-
-Once both services are running:
-1. **Frontend**: `http://localhost:3000` - Your main app interface
-2. **Backend**: `http://localhost:8000/docs` - API documentation
-
-The app will automatically connect the frontend to the backend, and you can start exploring your knowledge graph!
-
-## 💡 Pro Tips
-
-1. **Keep both terminals open** - Backend and frontend need to run simultaneously
-2. **Use the API docs** - Visit `/docs` to test endpoints interactively
-3. **Start with sample data** - Upload a few documents to see the magic happen
-4. **Explore the 3D graph** - The visualization is the most impressive feature!
-
-Happy exploring! 🚀
+See [`backend/DEPLOY.md`](backend/DEPLOY.md) — production runs on Google Cloud
+Run (backend + R2R in one container via `cloudbuild.yaml`), with Supabase as the
+Postgres/pgvector layer and Neo4j Aura for the graph.

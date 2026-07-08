@@ -1,1 +1,1 @@
-"""API layer for GraphAura."""
+"""API layer for BrainClone."""

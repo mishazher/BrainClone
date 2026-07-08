@@ -1,4 +1,4 @@
-"""Vector search and similarity service for GraphAura."""
+"""Vector search and similarity service for BrainClone."""
 
 import numpy as np
 from typing import List, Dict, Any, Optional, Tuple

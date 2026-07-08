@@ -1,4 +1,4 @@
-"""Neo4j graph database service for GraphAura."""
+"""Neo4j graph database service for BrainClone."""
 
 from typing import Optional, Dict, Any, List, Tuple
 from neo4j import AsyncGraphDatabase, AsyncDriver

@@ -1,4 +1,4 @@
-"""Relationship models for GraphAura knowledge graph."""
+"""Relationship models for BrainClone knowledge graph."""
 
 from datetime import datetime
 from typing import Optional, Any, Dict, List

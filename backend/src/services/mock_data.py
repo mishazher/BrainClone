@@ -1,11 +1,11 @@
-"""Mock data service for GraphAura demo - brings memories to life!"""
+"""Mock data service for BrainClone demo - brings memories to life!"""
 
 import random
 from typing import List, Dict, Any
 from datetime import datetime, timedelta
 
 class MockDataService:
-    """Service that provides sample memory data for GraphAura demo"""
+    """Service that provides sample memory data for BrainClone demo"""
     
     def __init__(self):
         self.memories = self._generate_sample_memories()

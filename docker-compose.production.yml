@@ -7,11 +7,13 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: graphaura
+      POSTGRES_DB: ${POSTGRES_DB:-brainclone}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      # Host port 5433 to avoid clashing with a local Postgres on 5432; the
+      # backend's .env uses POSTGRES_PORT=5433 (see RUN_APP_GUIDE.md).
+      - "5433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 10s
@@ -28,8 +30,9 @@ services:
     environment:
       R2R_PROJECT_NAME: brainclone
       R2R_CONFIG_PATH: /app/config/config.toml
-      R2R_POSTGRES_HOST: ${POSTGRES_HOST:-postgres}
-      R2R_POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      R2R_POSTGRES_HOST: postgres
+      # Container-to-container port, NOT the 5433 host mapping.
+      R2R_POSTGRES_PORT: "5432"
       R2R_POSTGRES_USER: ${POSTGRES_USER}
       R2R_POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       R2R_POSTGRES_DBNAME: ${R2R_POSTGRES_DBNAME:-r2r}
@@ -44,12 +47,16 @@ services:
   # Backend API
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      # The unified Dockerfile COPYs backend/ and r2r-config/, so the build
+      # context must be the repo root. Note: the image's start.sh also boots
+      # its own R2R process; with the dedicated r2r service above it's
+      # redundant but harmless (R2R_BASE_URL points at the r2r service).
+      context: .
+      dockerfile: backend/Dockerfile
     ports:
-      - "8000:8000"
+      - "8000:8080"
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/graphaura
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-brainclone}
       NEO4J_URI: ${NEO4J_URI}
       NEO4J_USER: ${NEO4J_USER}
       NEO4J_PASSWORD: ${NEO4J_PASSWORD}
