@@ -1,11 +1,23 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import Image from 'next/image';
-import { Play, Plus, MessageCircle } from 'lucide-react';
+import { Play, Plus, MessageCircle, Upload, Loader2, ChevronLeft, ChevronRight, X, Sparkles } from 'lucide-react';
 import { useGraphStore } from '@/stores/graphStore';
 import { graphApi } from '@/lib/api';
+import DocumentUpload from '@/components/DocumentUpload';
+
+interface OverviewFact {
+  fact: string;
+  nodeNames: string[];
+}
+
+type OverviewState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'error'; message: string }
+  | { status: 'ready'; overview: string; facts: OverviewFact[] };
 
 const Graph3D = dynamic(() => import('@/components/Graph3D'), {
   ssr: false,
@@ -27,6 +39,10 @@ export default function Home() {
   const [chatMessage, setChatMessage] = useState('');
   const [chatHistory, setChatHistory] = useState<Array<{role: 'user' | 'assistant', message: string, timestamp: string}>>([]);
   const [isProcessingChat, setIsProcessingChat] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
+  const [overviewState, setOverviewState] = useState<OverviewState>({ status: 'idle' });
+  // -1 = showing the overview intro; 0..n-1 = stepping through facts
+  const [factIndex, setFactIndex] = useState(-1);
 
   useEffect(() => {
     const loadGraphData = async () => {
@@ -284,6 +300,76 @@ export default function Home() {
     }
   };
 
+  // Tell the 3D graph which nodes the current fact refers to (empty = reset).
+  const highlightFactNodes = useCallback((fact: OverviewFact | null) => {
+    let nodeIds: string[] = [];
+    if (fact && Array.isArray(graphData?.nodes)) {
+      const wanted = new Set(fact.nodeNames.map((n) => n.toLowerCase()));
+      nodeIds = graphData.nodes
+        .filter((n) => wanted.has(n.name.toLowerCase()))
+        .map((n) => n.id);
+    }
+    window.dispatchEvent(new CustomEvent('highlightNodes', { detail: { nodeIds } }));
+  }, [graphData]);
+
+  // The Play button: ask the AI for a journal overview + facts about the person.
+  const handlePlayOverview = async () => {
+    if (overviewState.status === 'loading') return;
+    setFactIndex(-1);
+
+    if (!graphData?.nodes?.length) {
+      setOverviewState({ status: 'error', message: 'Your brain is empty — add some memories or upload a document first.' });
+      return;
+    }
+
+    setOverviewState({ status: 'loading' });
+    try {
+      const response = await fetch('/api/overview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ graphData }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(result?.error || `Failed to generate overview (${response.status})`);
+      }
+      setOverviewState({
+        status: 'ready',
+        overview: result.overview || '',
+        facts: Array.isArray(result.facts) ? result.facts : [],
+      });
+    } catch (error) {
+      setOverviewState({
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Failed to generate overview',
+      });
+    }
+  };
+
+  const closeOverview = useCallback(() => {
+    setOverviewState({ status: 'idle' });
+    setFactIndex(-1);
+    highlightFactNodes(null);
+  }, [highlightFactNodes]);
+
+  // Highlight the current fact's nodes, and auto-advance through the facts.
+  useEffect(() => {
+    if (overviewState.status !== 'ready') return;
+    const facts = overviewState.facts;
+
+    if (factIndex < 0 || factIndex >= facts.length) {
+      highlightFactNodes(null);
+      return;
+    }
+
+    highlightFactNodes(facts[factIndex]);
+
+    if (factIndex < facts.length - 1) {
+      const timer = setTimeout(() => setFactIndex((i) => i + 1), 9000);
+      return () => clearTimeout(timer);
+    }
+  }, [overviewState, factIndex, highlightFactNodes]);
+
   // Show splash screen while loading
   if (!appLoaded) {
     return (
@@ -402,15 +488,27 @@ export default function Home() {
 
         {/* Action Buttons */}
         <div className="space-y-2">
-          {/* Play Button */}
+          {/* Play Button — AI journal overview */}
           <button
-            onClick={() => {
-              const event = new CustomEvent('startOverview');
-              window.dispatchEvent(event);
-            }}
-            className="w-full px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all duration-300 transform hover:scale-105 shadow-lg flex items-center justify-center"
+            onClick={handlePlayOverview}
+            disabled={overviewState.status === 'loading'}
+            className="w-full px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all duration-300 transform hover:scale-105 shadow-lg flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            <Play className="w-5 h-5" />
+            {overviewState.status === 'loading' ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <Play className="w-5 h-5" />
+            )}
+            <span className="text-sm">Brain Overview</span>
+          </button>
+
+          {/* Upload Document Button */}
+          <button
+            onClick={() => setShowUpload(true)}
+            className="w-full px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:from-cyan-700 hover:to-blue-700 transition-all duration-300 transform hover:scale-105 shadow-lg flex items-center justify-center gap-2"
+          >
+            <Upload className="w-4 h-4" />
+            <span className="text-sm">Upload Document</span>
           </button>
 
           {/* Journal Button */}
@@ -529,6 +627,91 @@ export default function Home() {
           >
             Close Chat
           </button>
+        </div>
+      )}
+
+      {/* Document Upload Window */}
+      {showUpload && <DocumentUpload onClose={() => setShowUpload(false)} />}
+
+      {/* AI Brain Overview Panel */}
+      {overviewState.status !== 'idle' && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 w-full max-w-xl px-4">
+          <div className="bg-gray-800/95 backdrop-blur-sm rounded-xl p-5 shadow-2xl border border-purple-500/40">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-white font-semibold flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-purple-400" />
+                Brain Overview
+              </h3>
+              <button onClick={closeOverview} className="text-gray-400 hover:text-white transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {overviewState.status === 'loading' && (
+              <div className="flex items-center gap-3 text-gray-300 text-sm py-2">
+                <Loader2 className="w-4 h-4 animate-spin text-purple-400" />
+                Reading your journal and preparing an overview…
+              </div>
+            )}
+
+            {overviewState.status === 'error' && (
+              <p className="text-red-300 text-sm py-1">{overviewState.message}</p>
+            )}
+
+            {overviewState.status === 'ready' && (
+              <>
+                {factIndex < 0 ? (
+                  <>
+                    <p className="text-gray-200 text-sm leading-relaxed">{overviewState.overview}</p>
+                    {overviewState.facts.length > 0 && (
+                      <button
+                        onClick={() => setFactIndex(0)}
+                        className="mt-3 w-full px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all text-sm flex items-center justify-center gap-2"
+                      >
+                        <Play className="w-4 h-4" />
+                        Tour {overviewState.facts.length} facts about you
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <p className="text-purple-300 text-xs mb-1">
+                      Fact {factIndex + 1} of {overviewState.facts.length}
+                    </p>
+                    <p className="text-gray-200 text-sm leading-relaxed">
+                      {overviewState.facts[factIndex]?.fact}
+                    </p>
+                    <div className="flex items-center justify-between mt-3">
+                      <button
+                        onClick={() => setFactIndex((i) => Math.max(-1, i - 1))}
+                        className="px-3 py-1.5 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      <div className="flex gap-1.5">
+                        {overviewState.facts.map((_, i) => (
+                          <button
+                            key={i}
+                            onClick={() => setFactIndex(i)}
+                            className={`w-2 h-2 rounded-full transition-colors ${
+                              i === factIndex ? 'bg-purple-400' : 'bg-gray-600 hover:bg-gray-500'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                      <button
+                        onClick={() => setFactIndex((i) => Math.min(overviewState.facts.length - 1, i + 1))}
+                        disabled={factIndex >= overviewState.facts.length - 1}
+                        className="px-3 py-1.5 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors disabled:opacity-40"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+          </div>
         </div>
       )}
 

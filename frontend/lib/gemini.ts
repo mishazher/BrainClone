@@ -92,6 +92,90 @@ JSON only:`;
   // NOTE: chat moved to the FastAPI backend (`POST /api/v1/chat`). The Next.js
   // `/api/chat` route now proxies there, so the chatbot Gemini call no longer
   // runs in the frontend. Journaling (`analyzeJournalEntry`) still runs here.
+
+  /**
+   * Prepare a narrated overview of the user's journal/memory graph: a short
+   * summary plus a handful of facts about the person, each tied to the graph
+   * nodes it came from (so the UI can highlight them).
+   */
+  async generateBrainOverview(graphData?: {
+    nodes?: Array<{ name: string; type?: string; metadata?: Record<string, any> }>;
+    links?: Array<any>;
+  }): Promise<BrainOverview> {
+    const nodes = Array.isArray(graphData?.nodes) ? graphData!.nodes! : [];
+    const links = Array.isArray(graphData?.links) ? graphData!.links! : [];
+
+    if (nodes.length === 0) {
+      throw new Error('The knowledge graph is empty — add some memories first.');
+    }
+
+    // Journal nodes carry the richest signal (entry text/summaries); include
+    // them in more detail than plain entity nodes.
+    const journalNodes = nodes.filter((n) => n.type === 'journal').slice(0, 15);
+    const entityNodes = nodes.filter((n) => n.type !== 'journal').slice(0, 80);
+
+    const journalContext = journalNodes.map((n) => ({
+      name: n.name,
+      summary: String(n.metadata?.summary || n.metadata?.description || '').slice(0, 400),
+    }));
+    const entityContext = entityNodes.map((n) => ({
+      name: n.name,
+      type: n.type,
+      description: n.metadata?.description
+        ? String(n.metadata.description).slice(0, 150)
+        : undefined,
+    }));
+
+    const prompt = `You are the narrator of a person's "brain" — a knowledge graph built from their journal entries.
+
+Journal entries (${journalNodes.length} shown):
+${JSON.stringify(journalContext)}
+
+Entities in their memory graph (${entityNodes.length} of ${nodes.length} shown; ${links.length} connections total):
+${JSON.stringify(entityContext)}
+
+Prepare a spoken-style overview of this person's journal, plus 3 to 5 interesting facts about the person (their relationships, places they frequent, notable events, patterns you notice).
+
+Rules:
+- Each fact MUST list the node names it is based on in "nodeNames", copied EXACTLY as they appear above.
+- Keep the overview to 2-4 sentences, warm and personal, second person ("Your memories show...").
+- Each fact is one sentence.
+
+Return ONLY this JSON, nothing else:
+{"overview": "...", "facts": [{"fact": "...", "nodeNames": ["...", "..."]}]}`;
+
+    const text = await this.generateWithRetry(prompt);
+
+    let jsonText = text.trim();
+    if (jsonText.startsWith('```json')) {
+      jsonText = jsonText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+    } else if (jsonText.startsWith('```')) {
+      jsonText = jsonText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+    }
+
+    try {
+      const parsed = JSON.parse(jsonText) as BrainOverview;
+      return {
+        overview: String(parsed.overview || ''),
+        facts: Array.isArray(parsed.facts)
+          ? parsed.facts
+              .filter((f) => f && typeof f.fact === 'string')
+              .map((f) => ({
+                fact: f.fact,
+                nodeNames: Array.isArray(f.nodeNames) ? f.nodeNames.filter((n) => typeof n === 'string') : [],
+              }))
+          : [],
+      };
+    } catch {
+      // Model ignored the JSON contract — degrade gracefully to a plain overview.
+      return { overview: text.trim(), facts: [] };
+    }
+  }
+}
+
+export interface BrainOverview {
+  overview: string;
+  facts: Array<{ fact: string; nodeNames: string[] }>;
 }
 
 export const geminiService = new GeminiService();
